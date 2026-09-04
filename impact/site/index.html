@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2026 Marginal Impact Ranker</title>
+<style>
+  :root{
+    --bg:#f5f6f8;
+    --fg:#16181d;
+    --muted:#5b6472;
+    --card:#ffffff;
+    --card-2:#fbfbfd;
+    --border:#dde1e7;
+    --accent:#2454c7;
+    --accent-fg:#ffffff;
+    --link:#2454c7;
+    --row-alt:#f0f2f6;
+    --row-hover:#e8edf9;
+    --warn:#9a5b00;
+    --warn-bg:#fff2da;
+    --danger:#b91c1c;
+    --track:#d7dbe3;
+    --thumb:#2454c7;
+    --tick:#8b93a1;
+    --code-bg:#eef0f4;
+    --shadow: 0 1px 2px rgba(20,25,35,.06), 0 1px 1px rgba(20,25,35,.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#111318;
+      --fg:#e7e9ee;
+      --muted:#9aa4b5;
+      --card:#181b22;
+      --card-2:#1d212a;
+      --border:#2b3038;
+      --accent:#6d97f7;
+      --accent-fg:#0c0e12;
+      --link:#8fb2ff;
+      --row-alt:#1b1f27;
+      --row-hover:#232a38;
+      --warn:#ffbf6b;
+      --warn-bg:#3a2a0f;
+      --danger:#ff8a8a;
+      --track:#333944;
+      --thumb:#6d97f7;
+      --tick:#7d8798;
+      --code-bg:#1f232c;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 1px 1px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#111318;
+    --fg:#e7e9ee;
+    --muted:#9aa4b5;
+    --card:#181b22;
+    --card-2:#1d212a;
+    --border:#2b3038;
+    --accent:#6d97f7;
+    --accent-fg:#0c0e12;
+    --link:#8fb2ff;
+    --row-alt:#1b1f27;
+    --row-hover:#232a38;
+    --warn:#ffbf6b;
+    --warn-bg:#3a2a0f;
+    --danger:#ff8a8a;
+    --track:#333944;
+    --thumb:#6d97f7;
+    --tick:#7d8798;
+    --code-bg:#1f232c;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 1px 1px rgba(0,0,0,.25);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{
+    background:var(--bg);
+    color:var(--fg);
+    margin:0;
+    padding:0;
+    overflow-x:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;
+    line-height:1.5;
+  }
+  .wrap{
+    max-width:1180px;
+    margin:0 auto;
+    padding:20px 16px 60px;
+  }
+  a{color:var(--link);}
+  h1,h2,h3{line-height:1.25;}
+  h1{font-size:1.5rem;margin:0 0 6px;}
+  h2{font-size:1.05rem;margin:0 0 8px;}
+  .subtitle{color:var(--muted);margin:0 0 4px;max-width:70ch;}
+  .lede{margin:10px 0 0;max-width:74ch;}
+  .lede strong{color:var(--fg);}
+
+  header.site-header{
+    padding-bottom:14px;
+    margin-bottom:18px;
+    border-bottom:1px solid var(--border);
+  }
+
+  .param-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:10px 28px;
+    margin-top:12px;
+    font-size:.88rem;
+    color:var(--muted);
+  }
+  .param-grid dt{font-weight:600;color:var(--fg);}
+  .param-grid dd{margin:0 0 8px;}
+
+  section{margin-bottom:22px;}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    box-shadow:var(--shadow);
+    padding:16px 18px;
+  }
+
+  .controls-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:10px;
+  }
+  .controls-head h2{margin:0;}
+
+  #reset-btn{
+    background:var(--card-2);
+    color:var(--fg);
+    border:1px solid var(--border);
+    border-radius:7px;
+    padding:7px 14px;
+    font-size:.85rem;
+    cursor:pointer;
+  }
+  #reset-btn:hover{background:var(--row-hover);}
+
+  .control-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));
+    gap:18px 24px;
+  }
+  .control{
+    min-width:0;
+  }
+  .control label{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:8px;
+    font-weight:600;
+    font-size:.86rem;
+    margin-bottom:4px;
+  }
+  .control label .val{
+    font-variant-numeric:tabular-nums;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--code-bg);
+    border-radius:5px;
+    padding:1px 7px;
+    font-size:.82rem;
+  }
+  .info{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:15px;height:15px;
+    border-radius:50%;
+    background:var(--code-bg);
+    color:var(--muted);
+    font-size:.72rem;
+    font-style:normal;
+    cursor:help;
+    margin-left:4px;
+    border:1px solid var(--border);
+  }
+
+  .slider-box{position:relative; padding-bottom:14px; margin-top:2px;}
+  input[type=range]{
+    width:100%;
+    accent-color:var(--thumb);
+    height:20px;
+    margin:0;
+    background:transparent;
+    cursor:pointer;
+  }
+  .tick{
+    position:absolute;
+    top:20px;
+    width:2px;
+    height:9px;
+    background:var(--tick);
+    pointer-events:none;
+  }
+  .tick::after{
+    content:"";
+  }
+  .range-labels{
+    display:flex;
+    justify-content:space-between;
+    font-size:.72rem;
+    color:var(--muted);
+    margin-top:-8px;
+  }
+  .control .note{
+    font-size:.78rem;
+    color:var(--muted);
+    margin:4px 0 0;
+  }
+  .control .default-note{
+    font-size:.72rem;
+    color:var(--tick);
+    margin:2px 0 0;
+  }
+
+  .radio-group{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    font-size:.86rem;
+  }
+  .radio-group label{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-weight:400;
+    cursor:pointer;
+  }
+  .radio-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:18px;
+    align-items:flex-start;
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px solid var(--border);
+  }
+  .radio-row .control-title{
+    font-weight:600;
+    font-size:.86rem;
+    margin-bottom:6px;
+    display:block;
+  }
+
+  .filters-card{
+    display:flex;
+    flex-wrap:wrap;
+    gap:18px;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .filters-left{
+    display:flex;
+    flex-wrap:wrap;
+    gap:18px;
+    align-items:center;
+  }
+  .chamber-filter{display:flex;gap:14px;font-size:.86rem;align-items:center;}
+  .chamber-filter label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+  #search-box{
+    background:var(--card-2);
+    border:1px solid var(--border);
+    color:var(--fg);
+    border-radius:7px;
+    padding:7px 10px;
+    font-size:.86rem;
+    min-width:220px;
+  }
+  #count-note{color:var(--muted);font-size:.82rem;}
+
+  .table-wrap{
+    overflow-x:auto;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:var(--card);
+    box-shadow:var(--shadow);
+  }
+  table{
+    border-collapse:collapse;
+    width:100%;
+    min-width:880px;
+    font-size:.87rem;
+  }
+  thead th{
+    position:sticky;
+    top:0;
+    background:var(--card-2);
+    text-align:left;
+    padding:10px 12px;
+    border-bottom:1px solid var(--border);
+    white-space:nowrap;
+    font-size:.78rem;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    color:var(--muted);
+  }
+  th.sortable{cursor:pointer;user-select:none;}
+  th.sortable:hover{color:var(--fg);}
+  th .arrow{display:inline-block;width:1em;color:var(--accent);}
+  tbody td{
+    padding:9px 12px;
+    border-bottom:1px solid var(--border);
+    white-space:nowrap;
+  }
+  tbody tr:nth-child(even){background:var(--row-alt);}
+  tbody tr:hover{background:var(--row-hover);}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  td.impact{font-weight:700;}
+  .rank-cell{color:var(--muted);}
+
+  .marker{
+    display:inline-block;
+    font-size:.68rem;
+    font-weight:700;
+    border-radius:4px;
+    padding:1px 4px;
+    margin-left:5px;
+    cursor:help;
+    vertical-align:middle;
+  }
+  .marker.warn{background:var(--warn-bg);color:var(--warn);}
+  .marker.rcv{background:var(--code-bg);color:var(--muted);border:1px solid var(--border);}
+
+  .donate-btn{
+    display:inline-block;
+    background:var(--accent);
+    color:var(--accent-fg) !important;
+    text-decoration:none;
+    font-weight:600;
+    font-size:.8rem;
+    padding:5px 12px;
+    border-radius:6px;
+    white-space:nowrap;
+  }
+  .donate-btn:hover{opacity:.88;}
+
+  details.methodology summary{
+    cursor:pointer;
+    font-weight:700;
+    font-size:1.05rem;
+    padding:4px 0;
+  }
+  details.methodology[open] summary{margin-bottom:10px;}
+  .methodology .card{font-size:.9rem;color:var(--fg);}
+  .methodology p{margin:0 0 10px;max-width:76ch;}
+  .methodology code{
+    background:var(--code-bg);
+    border-radius:4px;
+    padding:1px 5px;
+    font-size:.85em;
+  }
+  .methodology ul{margin:0 0 10px;padding-left:1.2em;}
+
+  footer{
+    margin-top:26px;
+    padding-top:14px;
+    border-top:1px solid var(--border);
+    color:var(--muted);
+    font-size:.82rem;
+  }
+  footer a{color:var(--link);}
+
+  #load-error{
+    display:none;
+    background:var(--warn-bg);
+    color:var(--warn);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:16px;
+  }
+
+  @media (max-width:640px){
+    .param-grid{grid-template-columns:1fr;}
+    h1{font-size:1.3rem;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="site-header">
+    <h1>2026 Marginal Impact Ranker</h1>
+    <p class="subtitle">Which competitive U.S. House and Senate races give a Democratic donor the most impact per dollar &mdash; right now.</p>
+    <p class="lede">
+      <strong>Impact</strong> is a marginal-impact-per-dollar score: how much one more dollar to a given
+      race is expected to move the chance of flipping that seat and the chance that seat flips control of its
+      chamber, discounted for how expensive it is to reach voters there and for how much money the campaign
+      already has. Scores are normalized so the single highest-impact race among those currently shown always
+      reads <strong>100.0</strong>; every other race is relative to it. Adjust the assumptions below &mdash; the
+      whole table recalculates live, nothing reloads.
+    </p>
+    <dl class="param-grid">
+      <dt>Diminishing returns (eta)</dt>
+      <dd>How fast extra money in an already well-funded race stops mattering.</dd>
+      <dt>Chamber-control weight</dt>
+      <dd>How much a donor should care about flipping the House/Senate, on top of just this seat.</dd>
+      <dt>Senate seat value</dt>
+      <dd>How many "House seats" one Senate seat is worth (longer term, whole-state constituency).</dd>
+      <dt>Targetable spending share (theta)</dt>
+      <dd>How much of a dollar can be aimed precisely (digital/mail) vs. bleeds into expensive media markets.</dd>
+      <dt>Money definition</dt>
+      <dd>Which FEC figure stands in for "how funded is this campaign already".</dd>
+    </dl>
+  </header>
+
+  <div id="load-error"></div>
+
+  <section class="controls">
+    <div class="card">
+      <div class="controls-head">
+        <h2>Model parameters</h2>
+        <button type="button" id="reset-btn">Reset to defaults</button>
+      </div>
+
+      <div class="control-grid">
+
+        <div class="control">
+          <label for="eta">Price sensitivity (eta) <span class="val" id="eta-val">0.50</span></label>
+          <div class="slider-box">
+            <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.50">
+            <div class="tick" style="left:calc(8px + (100% - 16px) * 0.5)" title="default 0.50"></div>
+          </div>
+          <div class="range-labels"><span>0.01</span><span>0.99</span></div>
+          <p class="note">Diminishing returns / price sensitivity. At eta&nbsp;=&nbsp;1 price would drop out
+            of the model entirely, and at eta&nbsp;&ge;&nbsp;1 the math inverts &mdash; so the slider stays
+            strictly inside (0,&nbsp;1).</p>
+        </div>
+
+        <div class="control">
+          <label for="c_house">Chamber-control weight &mdash; House <span class="val" id="c_house-val">2.0</span></label>
+          <div class="slider-box">
+            <input type="range" id="c_house" min="0" max="50" step="0.5" value="2.0">
+            <div class="tick" style="left:calc(8px + (100% - 16px) * 0.04)" title="default 2.0"></div>
+          </div>
+          <div class="range-labels"><span>0</span><span>50</span></div>
+          <p class="note">Extra weight on flipping House control, beyond just winning this one House seat.</p>
+        </div>
+
+        <div class="control">
+          <label for="c_senate">Chamber-control weight &mdash; Senate <span class="val" id="c_senate-val">2.0</span></label>
+          <div class="slider-box">
+            <input type="range" id="c_senate" min="0" max="50" step="0.5" value="2.0">
+            <div class="tick" style="left:calc(8px + (100% - 16px) * 0.04)" title="default 2.0"></div>
+          </div>
+          <div class="range-labels"><span>0</span><span>50</span></div>
+          <p class="note">Extra weight on flipping Senate control, beyond just winning this one Senate seat.</p>
+        </div>
+
+        <div class="control">
+          <label for="sen_val">Value of a Senate seat, in House seats
+            <span class="info" tabindex="0" title="3× term length × 4.35× chamber size">i</span>
+            <span class="val" id="sen_val-val">13.05</span></label>
+          <div class="slider-box">
+            <input type="range" id="sen_val" min="1" max="30" step="0.05" value="13.05">
+            <div class="tick" style="left:calc(8px + (100% - 16px) * 0.41552)" title="default 13.05"></div>
+          </div>
+          <div class="range-labels"><span>1</span><span>30</span></div>
+          <p class="note">A Senate term is 3&times; as long and each seat represents a much larger, harder-to-flip
+            constituency (roughly 4.35&times; a House seat's share of a chamber), so a Senate seat is treated as
+            worth several House seats.</p>
+        </div>
+
+        <div class="control">
+          <label for="theta">Targetable spending share (theta) <span class="val" id="theta-val">0.00</span></label>
+          <div class="slider-box">
+            <input type="range" id="theta" min="0" max="1" step="0.01" value="0">
+            <div class="tick" style="left:calc(8px + (100% - 16px) * 0)" title="default 0.00"></div>
+          </div>
+          <div class="range-labels"><span>0</span><span>1</span></div>
+          <p class="note">Share of spending that is precisely targetable (digital/mail) vs. broadcast, which
+            spills into a whole media market. At theta&nbsp;=&nbsp;1 every race effectively costs the same to
+            reach a voter in; at theta&nbsp;=&nbsp;0 the full media-market overspill penalty applies.</p>
+        </div>
+
+      </div>
+
+      <div class="radio-row">
+        <div>
+          <span class="control-title">Money definition</span>
+          <div class="radio-group" id="money-group">
+            <label><input type="radio" name="money" value="proj" checked> Cash on hand + projected contributions (default)</label>
+            <label><input type="radio" name="money" value="receipts"> Total receipts to date</label>
+            <label><input type="radio" name="money" value="coh"> Cash on hand only</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="filters">
+    <div class="card filters-card">
+      <div class="filters-left">
+        <div class="chamber-filter" id="chamber-filter" role="radiogroup" aria-label="Chamber filter">
+          <label><input type="radio" name="chamber" value="all" checked> All</label>
+          <label><input type="radio" name="chamber" value="H"> House</label>
+          <label><input type="radio" name="chamber" value="S"> Senate</label>
+        </div>
+        <input type="text" id="search-box" placeholder="Search race or candidate&hellip;" aria-label="Search race or candidate">
+      </div>
+      <div id="count-note">&nbsp;</div>
+    </div>
+  </section>
+
+  <section class="table-section">
+    <div class="table-wrap">
+      <table id="races-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th class="sortable" data-key="impact">Impact <span class="arrow"></span></th>
+            <th class="sortable" data-key="race">Race <span class="arrow"></span></th>
+            <th class="sortable" data-key="name">Candidate <span class="arrow"></span></th>
+            <th class="sortable" data-key="ch">Chamber <span class="arrow"></span></th>
+            <th class="sortable" data-key="rating">Rating <span class="arrow"></span></th>
+            <th class="sortable" data-key="p">Dem win % <span class="arrow"></span></th>
+            <th class="sortable" data-key="cost">Cost idx <span class="arrow"></span></th>
+            <th class="sortable" data-key="money">Money used <span class="arrow"></span></th>
+            <th>Donate</th>
+          </tr>
+        </thead>
+        <tbody id="races-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="methodology">
+    <details>
+      <summary>Methodology</summary>
+      <div class="card">
+        <p><strong>The model.</strong> For each race, let <code>a</code> be the modeled probability that one
+          additional vote flips that seat, and <code>b</code> be the modeled probability that one additional
+          vote in that seat flips control of its chamber (its "vote power index"). A race's total value is
+          <code>V&nbsp;=&nbsp;c&middot;b&nbsp;+&nbsp;w&middot;a</code>, where <code>w</code> is 1 for a House
+          seat or the Senate-seat-value slider for a Senate seat, and <code>c</code> is the matching
+          chamber-control weight slider.</p>
+        <p><strong>a &mdash; chance one vote flips the seat.</strong> Silver Bulletin's forecast gives a win
+          probability for the leading Democrat (or, where there is none, the leading independent). That
+          probability is converted to an implied margin distribution (assumed roughly normal, with a
+          race-specific spread derived from Silver's own elasticity estimate), and <code>a</code> is the
+          density of that margin distribution at a tied race, scaled by how many effective voters stand between
+          a tie and a flip. Intuitively: races Silver already calls near a toss-up have a much higher chance
+          that a single vote is decisive than a race that is a lock either way.</p>
+        <p><strong>b &mdash; chance one vote flips the chamber.</strong> This is Silver's own "vote power
+          index" for the race &mdash; roughly, the probability that this specific seat ends up being the
+          tipping-point seat for chamber control, per vote cast there. It is largest in races that are both
+          close and pivotal to the chamber majority.</p>
+        <p><strong>Diminishing returns (CRRA).</strong> A campaign that already has a lot of money gets less
+          marginal benefit from one more dollar than a campaign that is still building out its operation. We
+          model this with a constant-relative-risk-aversion (CRRA)-style power discount,
+          <code>money<sup>&minus;eta</sup></code>: at <code>eta&nbsp;=&nbsp;0</code> money doesn't matter at
+          all to the ranking; as <code>eta</code> rises toward 1, well-funded campaigns are discounted more and
+          more heavily relative to under-funded ones. "Money" itself is whichever definition is selected
+          (projected cash available through Election Day, total receipts, or cash on hand), floored at
+          $250,000 so that a campaign with little or no reported money isn't treated as having literally
+          infinite marginal value.</p>
+        <p><strong>Media-market overspill cost index.</strong> A dollar spent on broadcast advertising pays for
+          impressions across an entire media market, not just the district &mdash; in a district that shares an
+          expensive market with other, more populous or more numerous districts, much of that spending is
+          wasted on voters who cannot cast a vote in this race. The cost index captures that relative overspill
+          per constituent. The <code>theta</code> slider interpolates between "all spending is broadcast and
+          fully subject to this overspill" (<code>theta&nbsp;=&nbsp;0</code>) and "all spending is
+          precisely targetable digital/mail, so cost is equalized across races" (<code>theta&nbsp;=&nbsp;1</code>).
+          The blended cost, <code>costEff</code>, then enters the model the same way money does &mdash; as a
+          diminishing-returns power term, <code>costEff<sup>eta&minus;1</sup></code> &mdash; so a race that is
+          expensive to advertise into needs more dollars to have the same effect as a cheap one.</p>
+        <p><strong>Putting it together.</strong></p>
+        <ul>
+          <li><code>raw = V &times; money<sup>&minus;eta</sup> &times; costEff<sup>eta&minus;1</sup></code></li>
+          <li><code>impact = 100 &times; raw / max(raw)</code>, where the max is taken over whatever races are
+            currently shown by the chamber and search filters &mdash; so the top race in view is always 100.0.</li>
+        </ul>
+        <p>This is a simplified, illustrative model built on public forecast and campaign-finance data. It is
+          not investment or campaign advice, and no part of it should be read as a prediction of any individual
+          race's outcome.</p>
+      </div>
+    </details>
+  </section>
+
+  <footer>
+    <p>Race forecasts, win probabilities, and vote-power indices are from
+      <a href="https://www.natesilver.net" target="_blank" rel="noopener noreferrer">Silver Bulletin</a>.
+      Campaign-finance figures are from the
+      <a href="https://www.fec.gov" target="_blank" rel="noopener noreferrer">Federal Election Commission</a>.
+      Forecast date: <span id="forecast-date">&mdash;</span>. This site is independent and is not affiliated
+      with Silver Bulletin, the FEC, ActBlue, or any campaign or candidate.</p>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var DEFAULTS = {
+    eta: 0.50,
+    c_house: 2.0,
+    c_senate: 2.0,
+    sen_val: 13.05,
+    theta: 0.00,
+    money: "proj"
+  };
+  var MONEY_FLOOR = 250000;
+
+  var ALL_RACES = [];
+  var state = {
+    chamber: "all",
+    search: "",
+    sortKey: "impact",
+    sortDir: -1 // -1 desc, 1 asc
+  };
+
+  var els = {};
+
+  function $(id){ return document.getElementById(id); }
+
+  function escapeHtml(s){
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function fmtMoney(v){
+    if (v == null || isNaN(v)) return "&mdash;";
+    var abs = Math.abs(v);
+    if (abs >= 1e9) return "$" + (v/1e9).toFixed(v/1e9 >= 100 ? 0 : 1) + "B";
+    if (abs >= 1e6) return "$" + (v/1e6).toFixed(v/1e6 >= 100 ? 0 : 1) + "M";
+    if (abs >= 1e3) return "$" + (v/1e3).toFixed(v/1e3 >= 100 ? 0 : 1) + "K";
+    return "$" + Math.round(v);
+  }
+
+  function fmtPct(p){
+    if (p == null || isNaN(p)) return "&mdash;";
+    return (p * 100).toFixed(1) + "%";
+  }
+
+  function readParams(){
+    return {
+      eta: parseFloat(els.eta.value),
+      c_house: parseFloat(els.c_house.value),
+      c_senate: parseFloat(els.c_senate.value),
+      sen_val: parseFloat(els.sen_val.value),
+      theta: parseFloat(els.theta.value),
+      money: (document.querySelector('input[name="money"]:checked') || {}).value || "proj"
+    };
+  }
+
+  function computeRow(r, p){
+    var isSen = r.ch === "S";
+    var w = isSen ? p.sen_val : 1;
+    var c = isSen ? p.c_senate : p.c_house;
+    var V = c * r.b + w * r.a;
+    var M;
+    if (p.money === "receipts") M = r.receipts;
+    else if (p.money === "coh") M = r.coh;
+    else M = r.proj;
+    if (M == null || isNaN(M)) M = 0;
+    var money = Math.max(M, MONEY_FLOOR);
+    var costEff = p.theta * 1.0 + (1 - p.theta) * r.cost;
+    var raw = V * Math.pow(money, -p.eta) * Math.pow(costEff, p.eta - 1);
+    if (!isFinite(raw) || raw < 0) raw = 0;
+    return {
+      race: r.race, ch: r.ch, name: r.name, party: r.party, rating: r.rating,
+      p: r.p, margin: r.margin, cost: r.cost, match: r.match, cov: r.cov,
+      moneyDefRaw: M, moneyUsed: money, raw: raw
+    };
+  }
+
+  function matchesFilter(r){
+    if (state.chamber !== "all" && r.ch !== state.chamber) return false;
+    if (state.search) {
+      var hay = (r.race + " " + r.name).toLowerCase();
+      if (hay.indexOf(state.search) === -1) return false;
+    }
+    return true;
+  }
+
+  function compareRows(a, b, key, dir){
+    var av, bv;
+    switch(key){
+      case "impact": av = a.impact; bv = b.impact; break;
+      case "race": av = a.race; bv = b.race; break;
+      case "name": av = a.name; bv = b.name; break;
+      case "ch": av = a.ch; bv = b.ch; break;
+      case "rating": av = a.rating || ""; bv = b.rating || ""; break;
+      case "p": av = a.p; bv = b.p; break;
+      case "cost": av = a.cost; bv = b.cost; break;
+      case "money": av = a.moneyUsed; bv = b.moneyUsed; break;
+      default: av = a.impact; bv = b.impact;
+    }
+    if (typeof av === "string" || typeof bv === "string") {
+      av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
+      var c2 = av < bv ? -1 : (av > bv ? 1 : 0);
+      return dir * c2;
+    }
+    return dir * (av - bv);
+  }
+
+  function donateUrl(r){
+    var state2 = r.race.slice(0, 2).toUpperCase();
+    var path = r.ch === "S" ? "fed-senate" : "fed-house";
+    return "https://secure.actblue.com/directory/" + state2 + "/candidate/" + path;
+  }
+
+  function render(){
+    var p = readParams();
+
+    var computed = ALL_RACES.map(function(r){ return computeRow(r, p); });
+    var filtered = computed.filter(matchesFilter);
+
+    var maxRaw = 0;
+    for (var i = 0; i < filtered.length; i++) {
+      if (filtered[i].raw > maxRaw) maxRaw = filtered[i].raw;
+    }
+    filtered.forEach(function(r){ r.impact = maxRaw > 0 ? (100 * r.raw / maxRaw) : 0; });
+
+    filtered.sort(function(a, b){ return compareRows(a, b, state.sortKey, state.sortDir); });
+
+    var moneyLabel = p.money === "receipts" ? "total receipts to date"
+                    : p.money === "coh" ? "cash on hand"
+                    : "cash on hand + projected contributions";
+
+    var html = filtered.map(function(r, idx){
+      var warn = "";
+      if (r.match === "none" || r.match === "top$") {
+        warn = '<span class="marker warn" title="The FEC money figure for this candidate could not be confidently matched (match: ' +
+          escapeHtml(r.match) + '); a floor value may be in use.">&#9888;</span>';
+      }
+      var ak = "";
+      if (r.race.indexOf("AK") === 0) {
+        ak = '<span class="marker rcv" title="Alaska uses ranked-choice voting; the two-candidate margin model here is approximate.">RCV</span>';
+      }
+      var covNote = r.cov ? (" (as of " + escapeHtml(r.cov) + ")") : "";
+      var moneyTitle = "Raw " + moneyLabel + ": " + fmtMoney(r.moneyDefRaw) + covNote +
+        ". Floored at $250K for the model.";
+      return (
+        '<tr>' +
+        '<td class="rank-cell">' + (idx + 1) + '</td>' +
+        '<td class="num impact">' + r.impact.toFixed(1) + '</td>' +
+        '<td>' + escapeHtml(r.race) + ak + '</td>' +
+        '<td>' + escapeHtml(r.name) + warn + '</td>' +
+        '<td>' + (r.ch === "S" ? "Senate" : "House") + '</td>' +
+        '<td>' + escapeHtml(r.rating || "&mdash;") + '</td>' +
+        '<td class="num">' + fmtPct(r.p) + '</td>' +
+        '<td class="num">' + r.cost.toFixed(2) + '</td>' +
+        '<td class="num" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
+        '<td><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
+        '</tr>'
+      );
+    }).join("");
+
+    $("races-tbody").innerHTML = html;
+    $("count-note").textContent = "Showing " + filtered.length + " of " + ALL_RACES.length + " races";
+    updateSortIndicators();
+  }
+
+  function updateSortIndicators(){
+    var ths = document.querySelectorAll("th.sortable");
+    ths.forEach(function(th){
+      var arrow = th.querySelector(".arrow");
+      if (th.dataset.key === state.sortKey) {
+        arrow.textContent = state.sortDir === 1 ? "↑" : "↓";
+      } else {
+        arrow.textContent = "";
+      }
+    });
+  }
+
+  function updateValueLabels(){
+    $("eta-val").textContent = parseFloat(els.eta.value).toFixed(2);
+    $("c_house-val").textContent = parseFloat(els.c_house.value).toFixed(1);
+    $("c_senate-val").textContent = parseFloat(els.c_senate.value).toFixed(1);
+    $("sen_val-val").textContent = parseFloat(els.sen_val.value).toFixed(2);
+    $("theta-val").textContent = parseFloat(els.theta.value).toFixed(2);
+  }
+
+  function attachEvents(){
+    ["eta", "c_house", "c_senate", "sen_val", "theta"].forEach(function(id){
+      els[id].addEventListener("input", function(){
+        updateValueLabels();
+        render();
+      });
+    });
+
+    document.querySelectorAll('input[name="money"]').forEach(function(r){
+      r.addEventListener("change", render);
+    });
+
+    document.querySelectorAll('input[name="chamber"]').forEach(function(r){
+      r.addEventListener("change", function(){
+        state.chamber = r.value;
+        render();
+      });
+    });
+
+    $("search-box").addEventListener("input", function(){
+      state.search = $("search-box").value.trim().toLowerCase();
+      render();
+    });
+
+    document.querySelectorAll("th.sortable").forEach(function(th){
+      th.addEventListener("click", function(){
+        var key = th.dataset.key;
+        if (state.sortKey === key) {
+          state.sortDir *= -1;
+        } else {
+          state.sortKey = key;
+          state.sortDir = (key === "race" || key === "name" || key === "ch" || key === "rating") ? 1 : -1;
+        }
+        render();
+      });
+    });
+
+    $("reset-btn").addEventListener("click", function(){
+      els.eta.value = DEFAULTS.eta;
+      els.c_house.value = DEFAULTS.c_house;
+      els.c_senate.value = DEFAULTS.c_senate;
+      els.sen_val.value = DEFAULTS.sen_val;
+      els.theta.value = DEFAULTS.theta;
+      document.querySelector('input[name="money"][value="' + DEFAULTS.money + '"]').checked = true;
+      updateValueLabels();
+      render();
+    });
+  }
+
+  function showLoadError(msg){
+    var box = $("load-error");
+    box.style.display = "block";
+    box.textContent = msg;
+  }
+
+  function init(data){
+    ALL_RACES = data.races || [];
+    var meta = data.meta || {};
+    $("forecast-date").textContent = meta.forecast_date || "unknown";
+
+    els.eta = $("eta");
+    els.c_house = $("c_house");
+    els.c_senate = $("c_senate");
+    els.sen_val = $("sen_val");
+    els.theta = $("theta");
+
+    updateValueLabels();
+    attachEvents();
+    render();
+  }
+
+  fetch("./data.json")
+    .then(function(resp){
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      return resp.json();
+    })
+    .then(init)
+    .catch(function(err){
+      showLoadError("Could not load data.json: " + err.message +
+        ". Make sure this page is served over http(s) (not opened as a local file://) so the browser can fetch it.");
+    });
+
+})();
+</script>
+</body>
+</html>
