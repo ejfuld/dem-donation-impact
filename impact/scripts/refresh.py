@@ -36,9 +36,9 @@ DATA_JSON = os.path.join(SITE, "data.json")
 SIG = {"H": 6.65, "S": 6.69}
 ELECTION = datetime.date(2026, 11, 3)
 CYCLE_START = datetime.date(2025, 1, 1)
-MONEY_FLOOR = 250_000.0
+MONEY_FLOOR = 1_000_000.0
 
-DEFAULTS = dict(c_house=2.0, c_senate=2.0, sen_val=13.05, eta=0.5, money="proj", theta=0.0)
+DEFAULTS = dict(c_house=8.7, c_senate=8.7, sen_val=13.05, eta=0.5, money="proj", theta=0.40)
 
 # Datawrapper chart ids + a known-good version to start probing upward from.
 CHARTS = {
@@ -274,6 +274,7 @@ def build_races():
                 margin=margin,
                 a=invN * phi(z) / sig,
                 b=vpi["vpi"],
+                N=1.0 / invN,
             ))
     return out, fetched_versions
 
@@ -450,12 +451,24 @@ def main():
         r["cov"] = cov
         r["match"] = m["match"]
 
+    import statistics as _st
+
+    _med = _st.median([r["N"] for r in races if r["ch"] == "H"])
+
+    for _r in races:
+
+        _r["Nrel"] = _r["N"] / _med
+
+        _r["reach"] = _r["cost"] * _r["Nrel"]
+
+
     meta = dict(
         forecast_date=datetime.date.today().isoformat(),
         built=datetime.date.today().isoformat(),
         n=len(races),
         sigma=SIG,
         defaults=DEFAULTS,
+        money_floor=MONEY_FLOOR,
         chart_versions=chart_versions,
     )
 
