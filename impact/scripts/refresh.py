@@ -5,6 +5,16 @@ Standard library only (urllib, csv, json). Designed to run unattended from
 GitHub Actions. Reuses the exact math from scripts/build.py so the output
 shape and field semantics never drift from what site/index.html expects.
 
+Race selection:
+  - A race is KEPT only when it has at least one Democratic-or-independent
+    candidate AND at least one Republican candidate. Everything else
+    (D-vs-D top-two races, R-vs-R top-two races, or a plain unopposed seat)
+    is dropped entirely and tallied into meta["excluded"].
+  - A kept race with tipping <= 0 has an undefined `a` (a = vpi/tipping,
+    a division by zero) - it stays in the data with calc=False and a=None
+    rather than being silently dropped, since b (=vpi) and every
+    money-related field are still perfectly well-defined for it.
+
 Failure policy:
   - Silver Bulletin data (the forecast itself) is load-bearing. If it cannot
     be fetched, this script fails loudly (non-zero exit) rather than writing
@@ -21,6 +31,7 @@ import json
 import math
 import os
 import re
+import statistics as _st
 import sys
 import time
 import unicodedata
@@ -38,7 +49,7 @@ ELECTION = datetime.date(2026, 11, 3)
 CYCLE_START = datetime.date(2025, 1, 1)
 MONEY_FLOOR = 1_000_000.0
 
-DEFAULTS = dict(c_house=8.7, c_senate=8.7, sen_val=13.05, eta=0.5, money="proj", theta=0.40)
+DEFAULTS = dict(c_house=25.0, senate_mult=0.75, sen_val=13.05, eta=0.72, theta=0.40, money="proj")
 
 # Datawrapper chart ids + a known-good version to start probing upward from.
 CHARTS = {
@@ -81,6 +92,61 @@ def phi_inv(p):
     q = p - .5
     r = q * q
     return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)
+
+
+# ---------------------------------------------------------------------------
+# `why` chips: rule-based, computed purely from a race's own numbers.
+# Shared logic with scripts/build.py - keep the two in sync.
+# ---------------------------------------------------------------------------
+
+def compute_why(r, top15_races):
+    chips = []
+
+    p = r["p"]
+    if 0.40 <= p <= 0.60:
+        chips.append("Toss-up")
+    elif (0.60 < p <= 0.80) or (0.20 <= p < 0.40):
+        chips.append("Competitive")
+    elif (0.80 < p <= 0.93) or (0.07 <= p < 0.20):
+        chips.append("Leaning")
+    else:
+        chips.append("Safe seat")
+    if len(chips) >= 4:
+        return chips[:4]
+
+    if r["Nrel"] is not None:
+        if r["Nrel"] < 0.75:
+            chips.append("Small electorate")
+        elif r["Nrel"] > 3.0:
+            chips.append("Very large electorate")
+        if len(chips) >= 4:
+            return chips[:4]
+
+    if r["reach"] is not None:
+        if r["reach"] < 2.5:
+            chips.append("Cheap to reach voters")
+        elif r["reach"] > 15:
+            chips.append("Expensive media market")
+        if len(chips) >= 4:
+            return chips[:4]
+
+    proj = r["proj"]
+    if proj < 1_500_000:
+        chips.append("Little money raised")
+    elif proj > 15_000_000:
+        chips.append("Already well funded")
+    if len(chips) >= 4:
+        return chips[:4]
+
+    if r["race"] in top15_races:
+        chips.append("Often the decisive seat")
+        if len(chips) >= 4:
+            return chips[:4]
+
+    if r["ch"] == "S":
+        chips.append("Senate seat (6-year term)")
+
+    return chips[:4]
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +221,12 @@ def as_pct_points(x):
 
 
 def norm_last_name(raw):
+    """Uppercase, accent-stripped, suffix-stripped, letters-only surname key.
+    E.g. "Gluesenkamp Pérez" -> "GLUESENKAMPPEREZ", "O'Rourke" -> "OROURKE"."""
     s = raw or ""
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     s = s.upper()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")  # drop combining accents
     s = re.sub(r"\b(JR|SR|II|III|IV)\b\.?", "", s)
     s = re.sub(r"[^A-Z]", "", s)
     return s
@@ -184,6 +253,41 @@ def race_code_from_fec(office, state, district):
     return "%s-%d" % (state, dn)
 
 
+def levenshtein(a, b):
+    """Plain edit distance between two strings, no dependencies - fine for
+    the short surname strings this is used on."""
+    if a == b:
+        return 0
+    la, lb = len(a), len(b)
+    if la == 0:
+        return lb
+    if lb == 0:
+        return la
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        ca = a[i - 1]
+        for j in range(1, lb + 1):
+            cost = 0 if ca == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+        prev = cur
+    return prev[lb]
+
+
+def best_candidate(cands):
+    """Pick among several FEC records at the same match tier: highest
+    receipts wins; ties broken toward an active, currently-filed candidate
+    (candidate_status == 'C' / is_active_candidate) when the API supplied
+    those fields."""
+    def sort_key(c):
+        return (
+            c.get("receipts", 0.0),
+            1 if c.get("candidate_status") == "C" else 0,
+            1 if c.get("is_active_candidate") else 0,
+        )
+    return max(cands, key=sort_key)
+
+
 # ---------------------------------------------------------------------------
 # Silver Bulletin: VPI + candidate charts -> per-race rows
 # ---------------------------------------------------------------------------
@@ -191,10 +295,20 @@ def race_code_from_fec(office, state, district):
 def build_races():
     """Fetch the VPI + candidate charts for House and Senate independently
     (so chamber attribution is unambiguous), join them by race code, and
-    reduce each race to a single kept candidate per the rules in the module
-    docstring. Returns (races, fetched_chart_versions)."""
+    classify each race by which parties are actually contesting it.
+
+    A race is KEPT only when it has at least one Democratic-or-independent
+    candidate AND at least one Republican candidate in Silver's candidate
+    list - that's what "a two-party contest exists" means here. Everything
+    else (D-vs-D top-two races, R-vs-R top-two races, or a plain unopposed
+    seat) is dropped entirely and tallied into `excluded`.
+
+    Returns (races, fetched_chart_versions, excluded) where excluded is
+    {"dem_only": [race, ...], "rep_only": [race, ...]}.
+    """
     fetched_versions = {}
     out = []
+    excluded = {"dem_only": [], "rep_only": []}
     for ch, vpi_key, cand_key in [("H", "house_vpi", "house_candidates"), ("S", "senate_vpi", "senate_candidates")]:
         vpi_cfg = CHARTS[vpi_key]
         cand_cfg = CHARTS[cand_key]
@@ -227,31 +341,24 @@ def build_races():
             if not vpi:
                 continue
             tip = vpi["tipping"]
-            if tip <= 0:
-                continue
 
             cands_sorted = sorted(cands, key=lambda c: -as_pct_points(c.get("forecasted_vote_share") or 0))
+
+            dems_or_indeps = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) in ("D", "I")]
+            reps = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) == "R"]
+
+            if not dems_or_indeps or not reps:
+                if dems_or_indeps and not reps:
+                    excluded["dem_only"].append(race)
+                elif reps and not dems_or_indeps:
+                    excluded["rep_only"].append(race)
+                # else: neither a tracked D/I nor an R candidate at all - not
+                # really a race either way; drop without tallying.
+                continue
+
+            chosen = dems_or_indeps[0]  # highest forecasted vote share among D/I
+
             top2 = cands_sorted[:2]
-            if len(top2) >= 2 and party_bucket(top2[0].get("candidate_party")) == "D" \
-                    and party_bucket(top2[1].get("candidate_party")) == "D":
-                continue  # D-vs-D: skip
-
-            dems = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) == "D"]
-            if dems:
-                chosen = dems[0]
-            else:
-                indeps = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) == "I"]
-                if indeps:
-                    chosen = indeps[0]
-                else:
-                    continue  # R-vs-R: skip
-
-            p = as_frac(chosen.get("win_probability"))
-            el = vpi["elasticity"]
-            z = phi_inv(p)
-            sig = SIG[ch] * el
-            invN = vpi["vpi"] / tip
-
             if len(top2) >= 2:
                 leader, second = top2[0], top2[1]
                 margin = as_pct_points(leader.get("forecasted_vote_share") or 0) - \
@@ -262,6 +369,25 @@ def build_races():
                 party = party_bucket(chosen.get("candidate_party"))
 
             rating = (chosen.get("race_rating") or "").strip()
+
+            p = as_frac(chosen.get("win_probability"))
+            el = vpi["elasticity"]
+
+            # tipping <= 0 would make invN = vpi/tipping a division by zero,
+            # so `a` is genuinely undefined there - keep the race, but mark
+            # it uncalculated rather than fake a number.
+            if tip <= 0:
+                a = None
+                N = None
+                calc = False
+            else:
+                z = phi_inv(p)
+                sig = SIG[ch] * el
+                invN = vpi["vpi"] / tip
+                a = invN * phi(z) / sig
+                N = 1.0 / invN
+                calc = True
+
             if not rating:
                 rating = "Toss-up" if 0.4 < p < 0.6 else ""
 
@@ -272,11 +398,9 @@ def build_races():
                 rating=rating,
                 tip=tip, vpi=vpi["vpi"], el=el, p=p,
                 margin=margin,
-                a=invN * phi(z) / sig,
-                b=vpi["vpi"],
-                N=1.0 / invN,
+                a=a, b=vpi["vpi"], N=N, calc=calc,
             ))
-    return out, fetched_versions
+    return out, fetched_versions, excluded
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +408,10 @@ def build_races():
 # ---------------------------------------------------------------------------
 
 def fetch_fec_totals(office, api_key):
-    """Page through /v1/candidates/totals/ for one office (H or S), party DEM,
-    election_year=2026, min_receipts=75000. Returns a list of result dicts."""
+    """Page through /v1/candidates/totals/ for one office (H or S), party
+    DEM, election_year=2026 - every declared Democratic candidate, however
+    small (no min_receipts floor), so downstream matching has the full field
+    to work with. Returns a list of result dicts."""
     results = []
     page = 1
     while True:
@@ -294,7 +420,6 @@ def fetch_fec_totals(office, api_key):
             office=office,
             party="DEM",
             election_year=2026,
-            min_receipts=75000,
             per_page=100,
             sort="-receipts",
             page=page,
@@ -313,7 +438,7 @@ def fetch_fec_totals(office, api_key):
         if total_pages is None and len(page_results) < params["per_page"]:
             break
         page += 1
-        time.sleep(0.2)  # be polite, especially on DEMO_KEY's tight rate limit
+        time.sleep(0.2)  # be polite even with a real API key
     return results
 
 
@@ -324,13 +449,18 @@ def fec_field(rec, *names, default=None):
     return default
 
 
-def build_fec_index(api_key):
-    """Returns dict: race_code -> list of FEC candidate-totals records
-    (each augmented with normalized last_name/receipts/coh/cov)."""
-    by_race = {}
+def build_fec_indexes(api_key):
+    """Returns (fec_by_race, fec_by_state):
+      fec_by_race: race_code -> list of FEC candidate-totals records
+      fec_by_state: (state, office) -> every record for that state
+        regardless of district (the redistricting fallback, tier "state")
+    Each record carries normalized last_name/receipts/coh/cov and, when the
+    API supplied them, candidate_status/is_active_candidate."""
+    fec_by_race = {}
+    fec_by_state = {}
     for office in ("H", "S"):
         for rec in fetch_fec_totals(office, api_key):
-            state = fec_field(rec, "state")
+            state = (fec_field(rec, "state") or "").strip().upper()
             district = fec_field(rec, "district", default="00")
             race = race_code_from_fec(office, state, district)
             receipts = float(fec_field(rec, "receipts", default=0) or 0)
@@ -338,29 +468,63 @@ def build_fec_index(api_key):
             cov = fec_field(rec, "coverage_end_date", "last_report_date", default="") or ""
             cov = str(cov)[:10]  # YYYY-MM-DD if present
             name = fec_field(rec, "name", "candidate_name", default="") or ""
-            by_race.setdefault(race, []).append(dict(
+            cand = dict(
                 receipts=receipts, coh=coh, cov=cov,
                 last_name_norm=norm_last_name(fec_last_name(name)),
-            ))
-    return by_race
+                candidate_status=fec_field(rec, "candidate_status", default=None),
+                is_active_candidate=fec_field(rec, "is_active_candidate", default=None),
+            )
+            fec_by_race.setdefault(race, []).append(cand)
+            fec_by_state.setdefault((state, office), []).append(cand)
+    return fec_by_race, fec_by_state
 
 
-def match_money(race, dem_last_name, fec_index, prev_money_by_race):
-    cands = fec_index.get(race) if fec_index is not None else None
-    if cands:
-        target = norm_last_name(dem_last_name)
-        for c in cands:
-            if c["last_name_norm"] == target:
-                return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="name")
-        best = max(cands, key=lambda c: c["receipts"])
-        return dict(receipts=best["receipts"], coh=best["coh"], cov=best["cov"], match="top$")
+def match_money(race, ch, dem_last_name, fec_by_race, fec_by_state):
+    """6-tier matching cascade against already-fetched FEC data (see module
+    docstring). Assumes fec_by_race/fec_by_state are real - possibly with
+    zero candidates for this particular race. Callers handle "the whole FEC
+    pull failed" separately (see main())."""
+    target = norm_last_name(dem_last_name)
+    state = race if ch == "S" else race.split("-")[0]
 
-    # No FEC candidates in this race (or FEC pull failed): fall back to
-    # whatever this race had in the previous data.json, if anything.
-    prev = (prev_money_by_race or {}).get(race)
-    if prev:
-        return dict(receipts=prev.get("receipts", 0.0), coh=prev.get("coh", 0.0),
-                     cov=prev.get("cov", ""), match=prev.get("match", "none"))
+    same = fec_by_race.get(race) or []
+
+    if target:
+        # tier 1: exact normalized last-name match, same state+district
+        exact = [c for c in same if c["last_name_norm"] == target]
+        if exact:
+            c = best_candidate(exact)
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="name")
+
+        # tier 2: substring match either direction, same state+district
+        sub = [c for c in same if c["last_name_norm"]
+               and (target in c["last_name_norm"] or c["last_name_norm"] in target)]
+        if sub:
+            c = best_candidate(sub)
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="fuzzy")
+
+        # tier 3: edit distance <= 2, same state+district
+        near = [c for c in same if c["last_name_norm"] and levenshtein(target, c["last_name_norm"]) <= 2]
+        if near:
+            c = best_candidate(near)
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="edit")
+
+        # tier 4: exact match anywhere in the same state, ignoring district
+        # (catches redistricting, where the FEC record still carries the old
+        # district number) - House only, Senate has no district to ignore.
+        if ch == "H":
+            state_cands = fec_by_state.get((state, "H")) or []
+            state_exact = [c for c in state_cands if c["last_name_norm"] == target]
+            if state_exact:
+                c = best_candidate(state_exact)
+                return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="state")
+
+    # tier 5: highest-receipts Democrat in that state+district
+    if same:
+        c = best_candidate(same)
+        return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$")
+
+    # tier 6: nothing
     return dict(receipts=0.0, coh=0.0, cov="", match="none")
 
 
@@ -398,7 +562,7 @@ def main():
 
     # 1) Silver Bulletin forecast data. Load-bearing: fail loudly if this fails.
     try:
-        races, chart_versions = build_races()
+        races, chart_versions, excluded = build_races()
     except Exception as e:
         print("FATAL: could not fetch/parse Silver Bulletin forecast data: %s" % e, file=sys.stderr)
         sys.exit(1)
@@ -411,21 +575,36 @@ def main():
 
     prev_by_race = load_prev_data_json()
 
-    # 2) FEC money. Best-effort: on failure, reuse previous data.json money fields.
-    fec_index = None
+    # 2) FEC money. Best-effort: on total failure, reuse previous data.json
+    # money fields for every race. On success, each race runs the 6-tier
+    # matching cascade against the freshly pulled FEC data (which may still
+    # come up empty for an individual race -> match="none").
+    fec_by_race = None
+    fec_by_state = None
     try:
-        fec_index = build_fec_index(api_key)
-        print("FEC: matched money data for %d races" % len(fec_index))
+        fec_by_race, fec_by_state = build_fec_indexes(api_key)
+        print("FEC: pulled candidate totals covering %d distinct races" % len(fec_by_race))
     except Exception as e:
         print("WARNING: FEC pull failed (%s); reusing previous data.json money fields where available" % e,
               file=sys.stderr)
-        fec_index = None
+        fec_by_race = None
+        fec_by_state = None
 
     cost_idx = load_cost_index()
 
+    match_counts = {"name": 0, "fuzzy": 0, "edit": 0, "state": 0, "top$": 0, "none": 0}
+
     for r in races:
         code = r["race"]
-        m = match_money(code, r["name"], fec_index, prev_by_race)
+        if fec_by_race is not None:
+            m = match_money(code, r["ch"], r["name"], fec_by_race, fec_by_state)
+        else:
+            prev = prev_by_race.get(code) or {}
+            m = dict(receipts=prev.get("receipts", 0.0), coh=prev.get("coh", 0.0),
+                      cov=prev.get("cov", ""), match=prev.get("match", "none"))
+
+        match_counts[m["match"]] = match_counts.get(m["match"], 0) + 1
+
         receipts = m["receipts"] or 0.0
         if receipts <= 0:
             receipts = MONEY_FLOOR
@@ -451,32 +630,44 @@ def main():
         r["cov"] = cov
         r["match"] = m["match"]
 
-    import statistics as _st
+    # electorate size / reach cost, same formula as build.py: median House N == 1
+    house_Ns = [r["N"] for r in races if r["ch"] == "H" and r["N"] is not None]
+    med_N = _st.median(house_Ns) if house_Ns else 1.0
+    for r in races:
+        if r["N"] is not None:
+            r["Nrel"] = r["N"] / med_N
+            r["reach"] = r["cost"] * r["Nrel"]
+        else:
+            r["Nrel"] = None
+            r["reach"] = None
 
-    _med = _st.median([r["N"] for r in races if r["ch"] == "H"])
+    top15 = set(r["race"] for r in sorted(races, key=lambda x: -x["tip"])[:15])
+    for r in races:
+        r["why"] = compute_why(r, top15)
 
-    for _r in races:
-
-        _r["Nrel"] = _r["N"] / _med
-
-        _r["reach"] = _r["cost"] * _r["Nrel"]
-
-
+    excluded_all = sorted(excluded["dem_only"] + excluded["rep_only"])
     meta = dict(
         forecast_date=datetime.date.today().isoformat(),
         built=datetime.date.today().isoformat(),
         n=len(races),
+        n_calc=sum(1 for r in races if r["calc"]),
         sigma=SIG,
-        defaults=DEFAULTS,
         money_floor=MONEY_FLOOR,
+        defaults=DEFAULTS,
         chart_versions=chart_versions,
+        excluded=dict(count=len(excluded_all), dem_only=len(excluded["dem_only"]),
+                      rep_only=len(excluded["rep_only"]), races=excluded_all),
+        match_counts=match_counts,
     )
 
     os.makedirs(SITE, exist_ok=True)
     with open(DATA_JSON, "w") as f:
         json.dump(dict(meta=meta, races=races), f, separators=(",", ":"))
 
-    print("wrote %d races to %s" % (len(races), DATA_JSON))
+    print("wrote %d races (%d calc) to %s" % (len(races), meta["n_calc"], DATA_JSON))
+    print("excluded %d races: dem_only=%d rep_only=%d" %
+          (meta["excluded"]["count"], meta["excluded"]["dem_only"], meta["excluded"]["rep_only"]))
+    print("FEC match tiers: %s" % match_counts)
 
 
 if __name__ == "__main__":
