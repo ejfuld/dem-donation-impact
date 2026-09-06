@@ -4,7 +4,7 @@ BASE = os.path.join(os.path.dirname(__file__), '..', 'data')
 SIG = {'H': 6.65, 'S': 6.69}
 ELECTION = datetime.date(2026, 11, 3)
 CYCLE_START = datetime.date(2025, 1, 1)
-MONEY_FLOOR = 250_000.0
+MONEY_FLOOR = 1_000_000.0
 
 
 def phi(z): return math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
@@ -53,7 +53,6 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
         receipts = float(m.get('receipts') or 0) or MONEY_FLOOR
         coh = max(float(m.get('coh') or 0), 0.0)
         cov = m.get('covend') or ''
-        # monthly contribution rate, extrapolated to election day
         if cov:
             cd = datetime.date(*map(int, cov.split('-')))
             months_in = max((cd - CYCLE_START).days / 30.44, 1.0)
@@ -66,35 +65,26 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
             rating=r['rating'] or ('Toss-up' if 0.4 < p < 0.6 else ''),
             tip=tip, vpi=float(r['vpi']), el=el, p=p,
             margin=float(marg.get(code, {}).get('margin') or 0),
-            a=invN * phi(z) / sig,          # oc P(one vote flips the seat)
-            b=float(r['vpi']),              # oc P(one vote flips the chamber)
-            cost=cost.get(code, 8.0),       # relative price per constituent ad impression
+            a=invN * phi(z) / sig,
+            b=float(r['vpi']),
+            cost=cost.get(code, 8.0),
+            N=1.0 / invN,
             receipts=receipts, coh=coh,
-            proj=coh + rate * months_left,  # cash on hand + extrapolated contributions
+            proj=coh + rate * months_left,
             rate=rate, cov=cov,
             match=m.get('match', 'none')))
 
+# reach cost: price of reaching a fixed share (1%) of THIS electorate
+import statistics as _st
+_med = _st.median([r['N'] for r in races if r['ch'] == 'H'])
+for r in races:
+    r['Nrel'] = r['N'] / _med
+    r['reach'] = r['cost'] * r['Nrel']
+
 meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
-            n=len(races), sigma=SIG,
-            defaults=dict(c_house=2.0, c_senate=2.0, sen_val=13.05, eta=0.5,
-                          money='proj', theta=0.0))
+            n=len(races), sigma=SIG, money_floor=MONEY_FLOOR,
+            defaults=dict(c_house=8.7, c_senate=8.7, sen_val=13.05, eta=0.5,
+                          money='proj', theta=0.40))
 json.dump(dict(meta=meta, races=races), open(os.path.join(BASE, '..', 'site', 'data.json'), 'w'),
           separators=(',', ':'))
 print('wrote', len(races), 'races')
-
-# ---- preview with default params ----
-D = meta['defaults']
-for r in races:
-    w = D['sen_val'] if r['ch'] == 'S' else 1.0
-    V = D['c_house'] * r['b'] + w * r['a'] if r['ch'] == 'H' else D['c_senate'] * r['b'] + w * r['a']
-    r['V'] = V
-    money_used = max(r['proj'], MONEY_FLOOR)
-    r['I'] = V * (money_used ** -D['eta']) * (r['cost'] ** (D['eta'] - 1))
-mx = max(r['I'] for r in races)
-for r in races:
-    r['I'] = 100 * r['I'] / mx
-print('%-7s %-18s %5s %7s %7s %9s  %s' % ('race', 'candidate', 'impact', 'cost', 'V', '$proj', 'rating'))
-for r in sorted(races, key=lambda x: -x['I'])[:20]:
-    print('%-7s %-18s %5.1f %7.1f %7.2f %9.1fM  %s' %
-          (r['race'] + ('*' if r['ch'] == 'S' else ''), r['name'][:18], r['I'], r['cost'],
-           r['V'], r['proj'] / 1e6, r['rating']))
