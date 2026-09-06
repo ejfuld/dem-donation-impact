@@ -428,6 +428,61 @@
   }
   .methodology ul{margin:0 0 10px;padding-left:1.2em;max-width:76ch;}
 
+  /* ---------- table footer: pagination + exclusion note ---------- */
+  .table-footer{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:10px;
+    font-size:.85rem;
+    color:var(--muted);
+  }
+  .per-page{display:flex;align-items:center;gap:7px;}
+  .per-page select{
+    background:var(--card-2);
+    border:1px solid var(--border);
+    color:var(--fg);
+    border-radius:6px;
+    padding:4px 8px;
+    font-size:.85rem;
+  }
+  .page-buttons{display:flex;gap:8px;align-items:center;}
+  .page-buttons button{
+    background:var(--card-2);
+    color:var(--fg);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:5px 12px;
+    font-size:.85rem;
+    cursor:pointer;
+  }
+  .page-buttons button:hover:not(:disabled){background:var(--row-hover);}
+  .page-buttons button:disabled{opacity:.45;cursor:default;}
+
+  .exclusion-note{
+    margin:10px 0 0;
+    font-size:.78rem;
+    color:var(--muted-2);
+    max-width:90ch;
+  }
+
+  /* ---------- why chips ---------- */
+  td.why-td{white-space:normal;max-width:230px;min-width:150px;}
+  .why-chips{display:flex;flex-wrap:wrap;gap:4px;}
+  .chip{
+    display:inline-block;
+    font-size:.68rem;
+    font-weight:600;
+    padding:1px 7px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--code-bg);
+    color:var(--muted);
+    white-space:nowrap;
+  }
+
   footer{
     margin-top:28px;
     padding-top:16px;
@@ -504,12 +559,31 @@
             <th class="sortable num" data-key="p">Dem win % <span class="arrow"></span></th>
             <th class="sortable num" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
             <th class="sortable num" data-key="money">Money used <span class="arrow"></span></th>
+            <th title="Top 25 races overall, by impact">Why</th>
             <th>Donate</th>
           </tr>
         </thead>
         <tbody id="races-tbody"></tbody>
       </table>
     </div>
+
+    <div class="table-footer">
+      <div class="per-page">
+        <label for="per-page-select">Rows per page</label>
+        <select id="per-page-select">
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div id="page-info">Showing &ndash;</div>
+      <div class="page-buttons">
+        <button type="button" id="prev-btn">Previous</button>
+        <button type="button" id="next-btn">Next</button>
+      </div>
+    </div>
+
+    <p class="exclusion-note" id="exclusion-note"></p>
   </section>
 
   <section class="controls">
@@ -526,52 +600,59 @@
 
         <div class="control">
           <div class="control-widget">
-            <label for="eta">Diminishing returns to fundraising (eta) <span class="val" id="eta-val">0.50</span></label>
+            <label for="eta">Bang for buck: low cost vs diminishing returns <span class="val" id="eta-val">0.72</span></label>
             <div class="slider-box">
-              <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.50">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.5)" title="default 0.50"></div>
+              <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.72">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.7245)" title="default 0.72"></div>
             </div>
             <div class="range-labels"><span>0.01</span><span>0.99</span></div>
           </div>
           <div class="control-def">
             <span class="term">What this is</span>
-            <p>How fast an extra dollar loses value as a campaign's war chest grows. It is <em>not</em> a
-              price-sensitivity knob — reach cost is handled separately, below. (Under the CRRA form used here
-              the price exponent on reach cost happens to equal eta&minus;1, but eta itself describes fundraising
-              returns, not how expensive voters are to reach.)</p>
-            <p class="extra">At eta&nbsp;=&nbsp;0, existing money wouldn't matter to the ranking at all; as eta
-              rises toward 1, well-funded campaigns are discounted more heavily relative to under-funded ones.
-              The slider stays strictly inside (0,&nbsp;1) because the math is undefined at the endpoints.</p>
+            <p>At 0, only the cost of reaching voters matters and the size of a campaign's existing war chest is
+              ignored. At 1, only diminishing returns to the war chest matter and differences in the cost of
+              reaching voters are ignored. In between, both count, with more weight on diminishing returns the
+              higher this goes.</p>
+            <p class="extra">Default 0.72 comes from Jacobson (1990), whose Box-Cox estimate of the concavity of
+              challenger House spending was lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04); since votes scale as
+              spending<sup>lambda</sup>, eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda.</p>
           </div>
         </div>
 
         <div class="control">
           <div class="control-widget">
-            <label for="c_house">Chamber-control weight — House <span class="val" id="c_house-val">8.7</span></label>
+            <label for="c_house">House control weight <span class="val" id="c_house-val">25.0</span></label>
             <div class="slider-box">
-              <input type="range" id="c_house" min="0" max="50" step="0.1" value="8.7">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.174)" title="default 8.7"></div>
+              <input type="range" id="c_house" min="0" max="100" step="0.5" value="25">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.25)" title="default 25"></div>
             </div>
-            <div class="range-labels"><span>0</span><span>50</span></div>
+            <div class="range-labels"><span>0</span><span>100</span></div>
           </div>
           <div class="control-def">
             <span class="term">What this is</span>
-            <p>Extra weight on flipping House control, beyond just winning this one House seat.</p>
+            <p>How much extra, measured in House seats, the tipping-point seat that decides control of the House
+              is worth. At 25, winning the seat that flips the chamber is worth 25 ordinary House seats on top
+              of the seat itself.</p>
           </div>
         </div>
 
         <div class="control">
           <div class="control-widget">
-            <label for="c_senate">Chamber-control weight — Senate <span class="val" id="c_senate-val">8.7</span></label>
+            <label for="senate_mult">Senate control multiplier <span class="val" id="senate_mult-val">0.75</span></label>
             <div class="slider-box">
-              <input type="range" id="c_senate" min="0" max="50" step="0.1" value="8.7">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.174)" title="default 8.7"></div>
+              <input type="range" id="senate_mult" min="0" max="3" step="0.05" value="0.75">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.25)" title="default 0.75"></div>
             </div>
-            <div class="range-labels"><span>0</span><span>50</span></div>
+            <div class="range-labels"><span>0</span><span>3</span></div>
           </div>
           <div class="control-def">
             <span class="term">What this is</span>
-            <p>Extra weight on flipping Senate control, beyond just winning this one Senate seat.</p>
+            <p>How much the tipping-point Senate seat is worth relative to the House control weight. 1.0 means
+              the same control bonus applies to both chambers.</p>
+            <p class="extra">Default 0.75 because a non-tipping Senate seat can still move the tipping point in
+              the next two cycles, and because the Senate has thresholds beyond a bare majority (60 for
+              cloture, two-thirds for treaties and impeachment convictions), whereas the House is purely
+              majoritarian with every seat contested every cycle.</p>
           </div>
         </div>
 
@@ -647,9 +728,10 @@
         <p><strong>The model.</strong> For each race, let <code>a</code> be the modeled probability that one
           additional vote flips that seat, and <code>b</code> be the modeled probability that one additional
           vote in that seat flips control of its chamber. A race's total value is
-          <code>V&nbsp;=&nbsp;c&middot;b&nbsp;+&nbsp;w&middot;a</code>, where <code>w</code> is 1 for a House
-          seat or the Senate-seat-value slider for a Senate seat, and <code>c</code> is the matching
-          chamber-control weight slider.</p>
+          <code>V&nbsp;=&nbsp;c_eff&middot;b&nbsp;+&nbsp;w&middot;a</code>, where <code>w</code> is 1 for a
+          House seat or the Senate-seat-value slider for a Senate seat, and <code>c_eff</code> is the House
+          control weight for a House seat, or the House control weight times the Senate control multiplier for
+          a Senate seat (<code>c_eff&nbsp;=&nbsp;c_house&middot;senate_mult</code>).</p>
         <p><strong>a &mdash; chance one vote flips the seat.</strong> Silver Bulletin's forecast gives a win
           probability for the leading Democrat (or, where there is none, the leading independent). That
           probability is converted to an implied margin distribution (assumed roughly normal, with a
@@ -665,29 +747,33 @@
         <p><strong>Reach cost.</strong> A dollar spent on broadcast advertising pays for impressions across an
           entire media market, not just the district, so in a district that shares an expensive market with
           other, more populous or more numerous constituencies, much of that spending reaches voters who
-          cannot cast a vote in this race. Reach cost is that per-constituent media-market overspill factor
-          multiplied by the relative size of the race's own electorate (median House district
+          cannot cast a vote in this race. Reach cost (<code>reach</code>) is that per-constituent media-market
+          overspill factor multiplied by the relative size of the race's own electorate (median House district
           =&nbsp;1.0) &mdash; in other words, what it actually costs a campaign to put a message in front of a
           fixed share, here 1%, of its electorate. The <code>theta</code> slider blends that reach cost with
-          a "fully targetable, equal everywhere" cost of 1.0: <code>reachEff&nbsp;=&nbsp;theta&nbsp;+&nbsp;(1&minus;theta)&middot;reach</code>.</p>
-        <p><strong>Diminishing returns (CRRA).</strong> A campaign that already has a lot of money gets less
-          marginal benefit from one more dollar than a campaign that is still building out its operation. We
-          model this with a constant-relative-risk-aversion (CRRA)-style power discount on the campaign's
-          existing money, <code>money<sup>&minus;eta</sup></code>, and the same discount applies to reach cost
-          with the complementary exponent, <code>reachEff<sup>eta&minus;1</sup></code> &mdash; so a race that
-          is expensive to advertise into needs more dollars to have the same effect as a cheap one. "Money"
-          itself is whichever definition is selected above, floored at $1,000,000 (see <code>money_floor</code>
-          in the data) so that a campaign with almost no reported money isn't treated as having spuriously
-          infinite marginal value.</p>
+          a "fully targetable, equal everywhere" cost of 1.0: <code>P_eff&nbsp;=&nbsp;theta&nbsp;+&nbsp;(1&minus;theta)&middot;reach</code>.</p>
+        <p><strong>Diminishing returns.</strong> A campaign that already has a lot of money gets less marginal
+          benefit from one more dollar than a campaign that is still building out its operation. We model this
+          with a power discount on the campaign's existing money, <code>money<sup>&minus;eta</sup></code>, and
+          the same discount applies to reach cost with the complementary exponent,
+          <code>P_eff<sup>eta&minus;1</sup></code> &mdash; so a race that is expensive to advertise into needs
+          more dollars to have the same effect as a cheap one. Default eta&nbsp;=&nbsp;0.72 follows Jacobson
+          (1990)'s Box-Cox estimate that challenger House spending is concave with lambda&nbsp;=&nbsp;0.28, so
+          eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda. "Money" itself is whichever definition is selected above,
+          floored at $1,000,000 (<code>money_floor</code> in the data) so that a campaign with almost no
+          reported money isn't treated as having spuriously infinite marginal value.</p>
         <p><strong>Putting it together.</strong></p>
         <ul>
-          <li><code>raw = V &times; money<sup>&minus;eta</sup> &times; reachEff<sup>eta&minus;1</sup></code></li>
-          <li><code>impact = 100 &times; raw / max(raw)</code>, where the max is taken over whatever races are
-            currently shown by the chamber and search filters &mdash; so the top race in view is always 100.0.</li>
+          <li><code>raw = V &times; money<sup>&minus;eta</sup> &times; P_eff<sup>eta&minus;1</sup></code></li>
+          <li><code>impact = 100 &times; raw / max(raw)</code>, where the max is taken over every race currently
+            shown by the chamber and search filters, across every page &mdash; so the top race is always
+            100.0 regardless of which page it falls on.</li>
         </ul>
-        <p>This is a simplified, illustrative model built on public forecast and campaign-finance data. It is
-          not investment or campaign advice, and no part of it should be read as a prediction of any individual
-          race's outcome.</p>
+        <p>Races the model cannot score at all (no defined tipping-point probability) show an em dash instead
+          of a number, sort to the bottom, and are excluded from that normalization &mdash; see the note below
+          the table. This is a simplified, illustrative model built on public forecast and campaign-finance
+          data. It is not investment or campaign advice, and no part of it should be read as a prediction of
+          any individual race's outcome.</p>
       </div>
     </details>
   </section>
@@ -708,21 +794,26 @@
   "use strict";
 
   var DEFAULTS = {
-    eta: 0.50,
-    c_house: 8.7,
-    c_senate: 8.7,
+    eta: 0.72,
+    c_house: 25.0,
+    senate_mult: 0.75,
     sen_val: 13.05,
     theta: 0.40,
     money: "proj"
   };
   var MONEY_FLOOR = 1000000; // overwritten from meta.money_floor once data loads
+  var TOP_WHY_N = 25; // "Why" chips only shown for this many top-ranked races overall
 
   var ALL_RACES = [];
+  var META = {};
   var state = {
     chamber: "all",
     search: "",
     sortKey: "impact",
-    sortDir: -1 // -1 desc, 1 asc
+    sortDir: -1, // -1 desc, 1 asc
+    page: 1,
+    perPage: 25,
+    totalPages: 1 // recomputed each render(); read by prev/next handlers
   };
 
   var els = {};
@@ -761,39 +852,51 @@
     return {
       eta: parseFloat(els.eta.value),
       c_house: parseFloat(els.c_house.value),
-      c_senate: parseFloat(els.c_senate.value),
+      senate_mult: parseFloat(els.senate_mult.value),
       sen_val: parseFloat(els.sen_val.value),
       theta: parseFloat(els.theta.value),
       money: (document.querySelector('input[name="money"]:checked') || {}).value || "proj"
     };
   }
 
-  // Scoring per race:
-  //   w = sen_val if Senate else 1; c = c_senate if Senate else c_house
-  //   V = c*b + w*a
+  // Scoring per race (races with calc === false get no score at all — see below):
+  //   c_eff = senate_mult * c_house if Senate else c_house
+  //   w     = sen_val if Senate else 1
+  //   V     = c_eff*b + w*a
   //   money = max(chosen money field, MONEY_FLOOR)
-  //   reachEff = theta*1.0 + (1-theta)*reach
-  //   raw = V * money^(-eta) * reachEff^(eta-1)
-  // impact is a separate normalization pass over the currently-displayed set.
+  //   P_eff = theta*1.0 + (1-theta)*reach
+  //   raw   = V * money^(-eta) * P_eff^(eta-1)
+  // impact is a separate normalization pass over the currently-filtered set
+  // (every page of it, not just the visible one) — see render().
   function computeRow(r, p){
     var isSen = r.ch === "S";
-    var w = isSen ? p.sen_val : 1;
-    var c = isSen ? p.c_senate : p.c_house;
-    var V = c * r.b + w * r.a;
+    var calc = !!r.calc;
     var M;
     if (p.money === "receipts") M = r.receipts;
     else if (p.money === "coh") M = r.coh;
     else M = r.proj;
     if (M == null || isNaN(M)) M = 0;
     var money = Math.max(M, MONEY_FLOOR);
-    var reachEff = p.theta * 1.0 + (1 - p.theta) * r.reach;
-    var raw = V * Math.pow(money, -p.eta) * Math.pow(reachEff, p.eta - 1);
-    if (!isFinite(raw) || raw < 0) raw = 0;
-    return {
+
+    var row = {
       race: r.race, ch: r.ch, name: r.name, party: r.party, rating: r.rating,
-      p: r.p, margin: r.margin, reach: r.reach, match: r.match, cov: r.cov,
-      moneyDefRaw: M, moneyUsed: money, raw: raw
+      p: r.p, margin: r.margin, match: r.match, cov: r.cov,
+      why: r.why || [], calc: calc,
+      reach: calc ? r.reach : null,
+      moneyDefRaw: M, moneyUsed: money,
+      raw: 0, impact: null, rank: null, top: false
     };
+
+    if (calc) {
+      var c_eff = isSen ? p.c_house * p.senate_mult : p.c_house;
+      var w = isSen ? p.sen_val : 1;
+      var V = c_eff * r.b + w * r.a;
+      var P_eff = p.theta * 1.0 + (1 - p.theta) * r.reach;
+      var raw = V * Math.pow(money, -p.eta) * Math.pow(P_eff, p.eta - 1);
+      if (!isFinite(raw) || raw < 0) raw = 0;
+      row.raw = raw;
+    }
+    return row;
   }
 
   function matchesFilter(r){
@@ -805,18 +908,22 @@
     return true;
   }
 
+  // calc === false rows sort to the very bottom under every sort order/direction,
+  // after every calc === true row — so that comparison happens before, and
+  // regardless of, the direction-sensitive comparison on the chosen sort key.
   function compareRows(a, b, key, dir){
+    if (a.calc !== b.calc) return a.calc ? -1 : 1;
     var av, bv;
     switch(key){
-      case "impact": av = a.impact; bv = b.impact; break;
+      case "impact": av = a.calc ? a.impact : 0; bv = b.calc ? b.impact : 0; break;
       case "race": av = a.race; bv = b.race; break;
       case "name": av = a.name; bv = b.name; break;
       case "ch": av = a.ch; bv = b.ch; break;
       case "rating": av = a.rating || ""; bv = b.rating || ""; break;
       case "p": av = a.p; bv = b.p; break;
-      case "reach": av = a.reach; bv = b.reach; break;
+      case "reach": av = a.calc ? a.reach : 0; bv = b.calc ? b.reach : 0; break;
       case "money": av = a.moneyUsed; bv = b.moneyUsed; break;
-      default: av = a.impact; bv = b.impact;
+      default: av = a.calc ? a.impact : 0; bv = b.calc ? b.impact : 0;
     }
     if (typeof av === "string" || typeof bv === "string") {
       av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
@@ -824,6 +931,30 @@
       return dir * c2;
     }
     return dir * (av - bv);
+  }
+
+  // Rank (and which rows get "Why" chips) is computed once over the FULL
+  // filtered set, independent of whichever column the table is currently
+  // sorted/displayed by, and independent of pagination. Competition ranking
+  // on the displayed (1-decimal-rounded) impact value: ties share a rank and
+  // the next distinct value skips ahead (1, 2, 2, 4, ...). calc === false
+  // rows get rank = null (rendered as "—") and never get Why chips.
+  function assignRanksAndWhy(rows){
+    var calcRows = rows.filter(function(r){ return r.calc; });
+    calcRows.sort(function(a, b){
+      if (b.impact !== a.impact) return b.impact - a.impact;
+      return a.race < b.race ? -1 : (a.race > b.race ? 1 : 0); // deterministic tiebreak
+    });
+    var rank = 0, lastRounded = null;
+    calcRows.forEach(function(r, i){
+      var rounded = r.impact.toFixed(1);
+      if (lastRounded === null || rounded !== lastRounded) {
+        rank = i + 1;
+        lastRounded = rounded;
+      }
+      r.rank = rank;
+      r.top = rank <= TOP_WHY_N;
+    });
   }
 
   function donateUrl(r){
@@ -838,20 +969,37 @@
     var computed = ALL_RACES.map(function(r){ return computeRow(r, p); });
     var filtered = computed.filter(matchesFilter);
 
+    // Normalize to 100 over the WHOLE filtered set (every page), calc===true
+    // rows only — calc===false rows get no impact score at all.
     var maxRaw = 0;
     for (var i = 0; i < filtered.length; i++) {
-      if (filtered[i].raw > maxRaw) maxRaw = filtered[i].raw;
+      if (filtered[i].calc && filtered[i].raw > maxRaw) maxRaw = filtered[i].raw;
     }
-    filtered.forEach(function(r){ r.impact = maxRaw > 0 ? (100 * r.raw / maxRaw) : 0; });
+    filtered.forEach(function(r){
+      if (r.calc) r.impact = maxRaw > 0 ? (100 * r.raw / maxRaw) : 0;
+    });
+
+    // Rank + "Why" eligibility, over the full filtered set, before pagination.
+    assignRanksAndWhy(filtered);
 
     filtered.sort(function(a, b){ return compareRows(a, b, state.sortKey, state.sortDir); });
+
+    // Pagination: clamp page into range, then slice out just this page.
+    var total = filtered.length;
+    var totalPages = Math.max(1, Math.ceil(total / state.perPage));
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+    state.totalPages = totalPages;
+    var startIdx = (state.page - 1) * state.perPage;
+    var endIdx = Math.min(startIdx + state.perPage, total);
+    var pageRows = filtered.slice(startIdx, endIdx);
 
     var moneyLabel = p.money === "receipts" ? "total receipts"
                     : p.money === "coh" ? "cash on hand"
                     : "cash on hand + projected contributions";
     var floorLabel = fmtMoney(MONEY_FLOOR);
 
-    var html = filtered.map(function(r, idx){
+    var html = pageRows.map(function(r){
       var warn = "";
       if (r.match === "none" || r.match === "top$") {
         warn = '<span class="marker warn" title="The FEC money figure for this candidate could not be confidently matched (match: ' +
@@ -872,19 +1020,39 @@
         ? DASH
         : '<span class="pcell"><span class="ptxt">' + pPct.toFixed(1) + '%</span>' +
           '<span class="pbar"><span class="pbar-fill" style="width:' + Math.max(0, Math.min(100, pPct)) + '%"></span></span></span>';
-      var impactPct = Math.max(0, Math.min(100, r.impact));
+
+      var rankText = r.calc ? String(r.rank) : DASH;
+
+      var impactCell;
+      if (!r.calc) {
+        impactCell = '<div class="impact-cell"><span class="impact-val">' + DASH + '</span></div>';
+      } else {
+        var impactPct = Math.max(0, Math.min(100, r.impact));
+        impactCell = '<div class="impact-cell"><div class="impact-bar" style="width:' + impactPct + '%"></div>' +
+          '<span class="impact-val">' + r.impact.toFixed(1) + '</span></div>';
+      }
+
+      var reachText = r.calc ? r.reach.toFixed(1) : DASH;
+
+      var whyCell = "";
+      if (r.calc && r.top && r.why && r.why.length) {
+        whyCell = '<div class="why-chips">' + r.why.map(function(w){
+          return '<span class="chip">' + escapeHtml(w) + '</span>';
+        }).join("") + '</div>';
+      }
+
       return (
         '<tr>' +
-        '<td class="rank-cell">' + (idx + 1) + '</td>' +
-        '<td class="num impact-td"><div class="impact-cell"><div class="impact-bar" style="width:' + impactPct + '%"></div>' +
-          '<span class="impact-val">' + r.impact.toFixed(1) + '</span></div></td>' +
+        '<td class="rank-cell">' + rankText + '</td>' +
+        '<td class="num impact-td">' + impactCell + '</td>' +
         '<td>' + escapeHtml(r.race) + ak + '</td>' +
         '<td>' + escapeHtml(r.name) + warn + '</td>' +
         '<td><span class="pill' + (r.ch === "S" ? " senate" : "") + '">' + (r.ch === "S" ? "Senate" : "House") + '</span></td>' +
         '<td>' + ratingText + '</td>' +
         '<td class="num">' + pCell + '</td>' +
-        '<td class="num">' + r.reach.toFixed(1) + '</td>' +
+        '<td class="num">' + reachText + '</td>' +
         '<td class="num" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
+        '<td class="why-td">' + whyCell + '</td>' +
         '<td><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
         '</tr>'
       );
@@ -893,6 +1061,23 @@
     $("races-tbody").innerHTML = html;
     $("count-note").textContent = "Showing " + filtered.length + " of " + ALL_RACES.length + " races";
     updateSortIndicators();
+    updatePagination(total, startIdx, endIdx);
+  }
+
+  function updatePagination(total, startIdx, endIdx){
+    var infoText = total === 0 ? "Showing 0 of 0" :
+      ("Showing " + (startIdx + 1) + "–" + endIdx + " of " + total);
+    $("page-info").textContent = infoText;
+    $("prev-btn").disabled = state.page <= 1;
+    $("next-btn").disabled = state.page >= state.totalPages;
+  }
+
+  // Filter, search, sort and parameter changes all reset paging to page 1;
+  // only the Previous/Next buttons and the rows-per-page control move within
+  // the already-computed set without implying a "new query".
+  function resetPageAndRender(){
+    state.page = 1;
+    render();
   }
 
   function updateSortIndicators(){
@@ -910,33 +1095,33 @@
   function updateValueLabels(){
     $("eta-val").textContent = parseFloat(els.eta.value).toFixed(2);
     $("c_house-val").textContent = parseFloat(els.c_house.value).toFixed(1);
-    $("c_senate-val").textContent = parseFloat(els.c_senate.value).toFixed(1);
+    $("senate_mult-val").textContent = parseFloat(els.senate_mult.value).toFixed(2);
     $("sen_val-val").textContent = parseFloat(els.sen_val.value).toFixed(2);
     $("theta-val").textContent = parseFloat(els.theta.value).toFixed(2);
   }
 
   function attachEvents(){
-    ["eta", "c_house", "c_senate", "sen_val", "theta"].forEach(function(id){
+    ["eta", "c_house", "senate_mult", "sen_val", "theta"].forEach(function(id){
       els[id].addEventListener("input", function(){
         updateValueLabels();
-        render();
+        resetPageAndRender();
       });
     });
 
     document.querySelectorAll('input[name="money"]').forEach(function(r){
-      r.addEventListener("change", render);
+      r.addEventListener("change", resetPageAndRender);
     });
 
     document.querySelectorAll('input[name="chamber"]').forEach(function(r){
       r.addEventListener("change", function(){
         state.chamber = r.value;
-        render();
+        resetPageAndRender();
       });
     });
 
     $("search-box").addEventListener("input", function(){
       state.search = $("search-box").value.trim().toLowerCase();
-      render();
+      resetPageAndRender();
     });
 
     document.querySelectorAll("th.sortable").forEach(function(th){
@@ -948,19 +1133,32 @@
           state.sortKey = key;
           state.sortDir = (key === "race" || key === "name" || key === "ch" || key === "rating") ? 1 : -1;
         }
-        render();
+        resetPageAndRender();
       });
+    });
+
+    $("per-page-select").addEventListener("change", function(){
+      state.perPage = parseInt($("per-page-select").value, 10) || 25;
+      resetPageAndRender();
+    });
+
+    $("prev-btn").addEventListener("click", function(){
+      if (state.page > 1) { state.page -= 1; render(); }
+    });
+
+    $("next-btn").addEventListener("click", function(){
+      if (state.page < state.totalPages) { state.page += 1; render(); }
     });
 
     $("reset-btn").addEventListener("click", function(){
       els.eta.value = DEFAULTS.eta;
       els.c_house.value = DEFAULTS.c_house;
-      els.c_senate.value = DEFAULTS.c_senate;
+      els.senate_mult.value = DEFAULTS.senate_mult;
       els.sen_val.value = DEFAULTS.sen_val;
       els.theta.value = DEFAULTS.theta;
       document.querySelector('input[name="money"][value="' + DEFAULTS.money + '"]').checked = true;
       updateValueLabels();
-      render();
+      resetPageAndRender();
     });
   }
 
@@ -970,26 +1168,45 @@
     box.textContent = msg;
   }
 
+  function renderExclusionNote(meta){
+    var ex = meta.excluded || {};
+    var n = ex.count || 0;
+    var el = $("exclusion-note");
+    el.textContent = n + " race" + (n === 1 ? "" : "s") + " " + (n === 1 ? "is" : "are") +
+      " excluded entirely: those where only Democrats or only Republicans are on the ballot, " +
+      "including seats where one party is unopposed and California and Washington top-two races " +
+      "that produced two candidates from the same party. There is either no Democrat to donate to " +
+      "or no Republican to defeat.";
+    if (ex.races && ex.races.length) {
+      var codes = ex.races.slice(0, 12);
+      var more = ex.races.length > codes.length ? ", …" : "";
+      el.title = "Excluded: " + codes.join(", ") + more;
+    }
+  }
+
   function init(data){
     ALL_RACES = data.races || [];
-    var meta = data.meta || {};
-    if (meta.money_floor != null && !isNaN(meta.money_floor)) {
-      MONEY_FLOOR = meta.money_floor;
+    META = data.meta || {};
+    if (META.money_floor != null && !isNaN(META.money_floor)) {
+      MONEY_FLOOR = META.money_floor;
     }
-    $("forecast-date").textContent = meta.forecast_date || "unknown";
+    $("forecast-date").textContent = META.forecast_date || "unknown";
+    renderExclusionNote(META);
 
     els.eta = $("eta");
     els.c_house = $("c_house");
-    els.c_senate = $("c_senate");
+    els.senate_mult = $("senate_mult");
     els.sen_val = $("sen_val");
     els.theta = $("theta");
+
+    $("per-page-select").value = String(state.perPage);
 
     updateValueLabels();
     attachEvents();
     render();
   }
 
-  fetch("./data.json?v=" + Date.now(), { cache: "no-store" })
+  fetch("./data.json")
     .then(function(resp){
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       return resp.json();
