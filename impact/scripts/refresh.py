@@ -344,19 +344,28 @@ def build_races():
 
             cands_sorted = sorted(cands, key=lambda c: -as_pct_points(c.get("forecasted_vote_share") or 0))
 
-            dems_or_indeps = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) in ("D", "I")]
-            reps = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) == "R"]
+            dems = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) == "D"]
+            indeps = [c for c in cands_sorted if party_bucket(c.get("candidate_party")) == "I"]
+            buckets = set(party_bucket(c.get("candidate_party")) for c in cands_sorted)
 
-            if not dems_or_indeps or not reps:
-                if dems_or_indeps and not reps:
-                    excluded["dem_only"].append(race)
-                elif reps and not dems_or_indeps:
+            # A race is contested if two or more candidates run AND they are not
+            # all from the same party. An independent stands in for whichever
+            # major party is absent: D-vs-I and I-vs-R are both real contests.
+            # Only same-party races (CA/WA top-two D-vs-D or R-vs-R) and
+            # unopposed seats are dropped.
+            if len(cands_sorted) < 2 or len(buckets) < 2:
+                if buckets == {"R"}:
                     excluded["rep_only"].append(race)
-                # else: neither a tracked D/I nor an R candidate at all - not
-                # really a race either way; drop without tallying.
+                else:
+                    excluded["dem_only"].append(race)
                 continue
 
-            chosen = dems_or_indeps[0]  # highest forecasted vote share among D/I
+            # Democratic-aligned candidate: the Democrat if one is running,
+            # otherwise the strongest independent.
+            chosen = dems[0] if dems else (indeps[0] if indeps else None)
+            if chosen is None:
+                excluded["rep_only"].append(race)
+                continue
 
             top2 = cands_sorted[:2]
             if len(top2) >= 2:
