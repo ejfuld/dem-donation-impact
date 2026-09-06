@@ -2,7 +2,7 @@ name: Refresh race data
 
 on:
   schedule:
-    - cron: '0 11 * * *'
+    - cron: '0 4 * * *'
   workflow_dispatch: {}
 
 permissions:
