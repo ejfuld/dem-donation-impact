@@ -73,16 +73,35 @@ PRIOR_REACH = 1.0
 OVERRIDES = {
     # race code -> manual money figures used INSTEAD of the FEC match.
     # Only add an entry when FEC data is known to be wrong or missing.
+    # `expires` (ISO date, optional): after this date the override is ignored
+    # and the real FEC figures are used again. Set it to just after the filing
+    # that is expected to fix the underlying gap, so a stale hand-estimate can
+    # never silently outlive the data problem it was patching.
     "ME": dict(
         receipts=3_000_000.0,
         coh=2_500_000.0,
         proj=6_000_000.0,
+        expires="2026-10-20",
         note="FEC shows $0 because Jackson's committee has not filed since his July "
              "nomination (Q3 report due Oct 15). Press reporting: $1M+ raised by Jul 22, "
-             "plus $2M in the days after the nomination. Figures here are an estimate.",
+             "plus $2M in the days after the nomination. Figures here are an estimate, "
+             "and this override lapses on 2026-10-20.",
         source="https://spectrumlocalnews.com/me/maine/news/2026/07/27/maine-senate-race",
     ),
 }
+
+
+def active_overrides(today=None):
+    """OVERRIDES minus any whose `expires` date has passed."""
+    today = today or datetime.date.today()
+    out = {}
+    for race, ov in OVERRIDES.items():
+        exp = ov.get("expires")
+        if exp and datetime.date(*map(int, exp.split("-"))) < today:
+            continue
+        out[race] = ov
+    return out
+
 
 DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money="proj",
                 outside_mult=0.35)
@@ -833,7 +852,7 @@ def main():
         # --- manual money overrides (see OVERRIDES near the top) ---
         # Keyed by the exact `race` code, so this lookup works unchanged for
         # both Senate ("ME") and House ("PA-10") race codes.
-        ov = OVERRIDES.get(code)
+        ov = active_overrides().get(code)
         if ov:
             r["receipts"] = ov["receipts"]
             r["coh"] = ov["coh"]
