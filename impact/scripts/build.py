@@ -10,6 +10,13 @@ CYCLE_START = datetime.date(2025, 1, 1)
 # money can be expressed as "impression passes" (see the scoring section).
 K_DOLLARS_PER_REACH = 5000.0
 
+# Fixed model constant, deliberately NOT user-tunable: every campaign is
+# treated as already having reached its electorate this many times before
+# any donation. It only exists to keep the marginal value of the first
+# dollar finite; it is a fudge factor with no empirical grounding, so it is
+# not exposed as a degree of freedom.
+PRIOR_REACH = 1.0
+
 # Manual money overrides: race code -> hand-entered figures used instead of
 # the FEC match, for cases where FEC data is known to be wrong or missing
 # (e.g. a late-nominated replacement candidate whose committee hasn't filed
@@ -114,6 +121,15 @@ cost = {r['race']: float(r['costidx']) for r in rd('cost_index.csv')}
 money = {r['race']: r for r in rd('money_2026-09-04.csv')}
 marg = {r['race']: r for r in rd('margins_2026-09-04.csv')}
 
+# Outside / independent-expenditure money (see scripts/refresh.py for the
+# live FEC schedule_e pull that produces this file day to day). No network
+# in build.py, so this is read from a checked-in CSV when present; when it's
+# absent (e.g. a fresh checkout before the first refresh has run) every
+# race just gets outside_support == outside_oppose == outside_total == 0.0 -
+# this must never fail the build.
+_outside_path = os.path.join(BASE, 'outside_2026.csv')
+outside = {r['race']: r for r in rd('outside_2026.csv')} if os.path.exists(_outside_path) else {}
+
 races = []
 dem_only_races = []
 rep_only_races = []
@@ -155,8 +171,17 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
         # tipping == 0 would make invN = vpi/tipping a division by zero, so
         # `a` (oc P(one vote flips the seat)) is genuinely undefined there -
         # keep the race, but mark it uncalculated rather than fake a number.
+        # `b` (oc P(one vote flips the chamber)) is then an independence
+        # decomposition, not Silver's raw VPI directly: P(one vote flips the
+        # chamber) = P(one vote flips the seat) x P(this seat is the tipping
+        # point) = a * tipping. That guarantees b <= a (tipping is a
+        # probability, so tipping <= 1) and removes the unknown scaling
+        # constant that using vpi directly left between a and b. `vpi` is
+        # still carried on the race dict below for reference - it must not
+        # drive scoring any more.
         if tip <= 0:
             a = None
+            b = None
             N = None
             calc = False
         else:
@@ -164,8 +189,13 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
             sig = SIG[ch] * el
             invN = vpi / tip
             a = invN * phi(z) / sig
+            b = a * tip
             N = 1.0 / invN
             calc = True
+
+        ov_row = outside.get(code, {})
+        outside_support = float(ov_row.get('outside_support') or 0.0)
+        outside_oppose = float(ov_row.get('outside_oppose') or 0.0)
 
         races.append(dict(
             race=code, ch=ch, name=r['dem_last'], party=marg.get(code, {}).get('party', 'D'),
@@ -173,7 +203,7 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
             tip=tip, vpi=vpi, el=el, p=p,
             margin=float(marg.get(code, {}).get('margin') or 0),
             a=a,                             # oc P(one vote flips the seat)
-            b=vpi,                           # oc P(one vote flips the chamber)
+            b=b,                             # oc P(one vote flips the chamber) = a * tip
             cost=cost.get(code, 8.0),        # media-market overspill factor (per constituent)
             N=N,                             # oc size of the electorate
             receipts=receipts, coh=coh,
@@ -181,6 +211,12 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
             rate=rate, cov=cov,
             match=m.get('match', 'none'),
             calc=calc,
+            # opp_id: build.py has no network / per-candidate FEC ids to
+            # resolve a main opponent from, unlike refresh.py - always None
+            # here, kept only so the two scripts stay schema-identical.
+            opp_id=None,
+            outside_support=outside_support, outside_oppose=outside_oppose,
+            outside_total=outside_support + outside_oppose,
             Nrel=None, reach=None))          # filled in below once the House median N is known
 
         # --- manual money overrides (see OVERRIDES near the top) ---
@@ -227,8 +263,19 @@ overridden_races = sorted(r['race'] for r in races if r.get('override'))
 # rather than recomputing them independently. Identical logic lives in
 # scripts/refresh.py - keep the two in sync.
 # ---------------------------------------------------------------------------
-DEFAULTS = dict(c_house=25.0, senate_mult=0.80, sen_val=13.05, eta=0.6667, theta=0.40, money='proj',
-                prior_reach=60.0)
+DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money='proj',
+                outside_mult=0.35)
+
+# money_eff: the money the campaign effectively commands - its own selected
+# money figure, plus outside/independent-expenditure spending that helps it,
+# discounted by outside_mult because candidates get the statutory lowest
+# unit rate for broadcast while outside groups do not (measured market gaps
+# of 2.25x-3.5x mean an outside dollar buys roughly 29-44% of the reach a
+# candidate dollar does). Computed for every race, calc or not, same as
+# proj/receipts/coh - only p_dollars/passes below require calc (they need
+# `reach`, which needs N).
+for r in races:
+    r['money_eff'] = r[DEFAULTS['money']] + DEFAULTS['outside_mult'] * r['outside_total']
 
 # theta anchor: the MEAN reach cost across House races that could be scored,
 # replacing the old fixed "fully targetable" cost of 1.0.
@@ -249,10 +296,12 @@ for r in races:
         # just converted from the `reach` index into dollars via K.
         P_eff = DEFAULTS['theta'] * anchor + (1 - DEFAULTS['theta']) * r['reach']
         p_dollars = P_eff * K_DOLLARS_PER_REACH
-        # passes: how many impression passes the campaign's money buys.
-        # No money floor needed any more: at money==0, passes==0 and
-        # (prior_reach + passes)**-eta is still finite (see CRRA note below).
-        passes = r[DEFAULTS['money']] / p_dollars
+        # passes: how many impression passes the campaign's money buys, out
+        # of money_eff (its own money plus discounted outside money) rather
+        # than the raw money field alone. No money floor needed any more: at
+        # money==0, passes==0 and (prior_reach + passes)**-eta is still
+        # finite (see CRRA note below).
+        passes = r['money_eff'] / p_dollars
         # elasticity enters twice: once widening sigma (inside `a`, above),
         # once again here as an ease-of-persuasion multiplier on raw impact.
         #
@@ -269,7 +318,7 @@ for r in races:
         # shape - which falls out of it exactly when passes >> prior_reach -
         # with a version that has no singularity at D == 0 (raw is then
         # simply V*el*Nrel*prior_reach**-eta/p_dollars, finite).
-        raw = V * r['el'] * r['Nrel'] * (DEFAULTS['prior_reach'] + passes) ** -DEFAULTS['eta'] / p_dollars
+        raw = V * r['el'] * r['Nrel'] * (PRIOR_REACH + passes) ** -DEFAULTS['eta'] / p_dollars
         r['p_dollars'] = p_dollars
         r['passes'] = passes
     else:
@@ -285,12 +334,17 @@ for r in races:
 # mean race, not the top race, scores impact == 100.
 mean_raw = sum(raw_by_race.values()) / total_races
 
+_outside_vals = [r['outside_total'] for r in races]
+outside_totals = dict(races_with_outside=sum(1 for v in _outside_vals if v > 0),
+                       sum=sum(_outside_vals))
+
 meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
             n=len(races), n_calc=sum(1 for r in races if r['calc']),
             sigma=SIG, k_dollars_per_reach=K_DOLLARS_PER_REACH,
             defaults=DEFAULTS,
-            anchor=anchor, total_races=total_races, mean_raw=mean_raw,
+            anchor=anchor, total_races=total_races, mean_raw=mean_raw, prior_reach=PRIOR_REACH,
             match_counts=match_counts, overrides=overridden_races,
+            outside_totals=outside_totals,
             excluded=dict(count=len(excluded_races), dem_only=len(dem_only_races),
                           rep_only=len(rep_only_races), races=excluded_races))
 json.dump(dict(meta=meta, races=races), open(os.path.join(BASE, '..', 'site', 'data.json'), 'w'),
@@ -299,10 +353,10 @@ print('wrote', len(races), 'races (', meta['n_calc'], 'calc )')
 print('excluded', meta['excluded']['count'], 'races: dem_only=%d rep_only=%d' %
       (meta['excluded']['dem_only'], meta['excluded']['rep_only']), '->', excluded_races[:10])
 
-# ---- preview with default params (impact = 100 * raw / mean_raw) ----
+# ---- preview with default params (impact = raw / mean_raw, mean race = 1.00) ----
 scored = [r for r in races if r['calc']]
 for r in scored:
-    r['I'] = 100 * raw_by_race[r['race']] / mean_raw
+    r['I'] = raw_by_race[r['race']] / mean_raw
 print('%-7s %-18s %9s %7s %7s %9s  %s' % ('race', 'candidate', 'impact', 'cost', 'V', '$proj', 'rating'))
 for r in sorted(scored, key=lambda x: -x['I'])[:20]:
     print('%-7s %-18s %9.1f %7.1f %7.2f %9.1fM  %s' %
