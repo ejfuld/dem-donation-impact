@@ -53,6 +53,24 @@ CYCLE_START = datetime.date(2025, 1, 1)
 # money can be expressed as "impression passes" (see the scoring section).
 K_DOLLARS_PER_REACH = 5000.0
 
+# Manual money overrides: race code -> hand-entered figures used instead of
+# the FEC match, for cases where FEC data is known to be wrong or missing
+# (e.g. a late-nominated replacement candidate whose committee hasn't filed
+# yet). General mechanism - add an entry here whenever this recurs.
+OVERRIDES = {
+    # race code -> manual money figures used INSTEAD of the FEC match.
+    # Only add an entry when FEC data is known to be wrong or missing.
+    "ME": dict(
+        receipts=3_000_000.0,
+        coh=2_500_000.0,
+        proj=6_000_000.0,
+        note="FEC shows $0 because Jackson's committee has not filed since his July "
+             "nomination (Q3 report due Oct 15). Press reporting: $1M+ raised by Jul 22, "
+             "plus $2M in the days after the nomination. Figures here are an estimate.",
+        source="https://spectrumlocalnews.com/me/maine/news/2026/07/27/maine-senate-race",
+    ),
+}
+
 DEFAULTS = dict(c_house=25.0, senate_mult=0.80, sen_val=13.05, eta=0.6667, theta=0.40, money="proj",
                 prior_reach=60.0)
 
@@ -658,8 +676,6 @@ def main():
             m = dict(receipts=prev.get("receipts", 0.0), coh=prev.get("coh", 0.0),
                       cov=prev.get("cov", ""), match=prev.get("match", "none"))
 
-        match_counts[m["match"]] = match_counts.get(m["match"], 0) + 1
-
         receipts = m["receipts"] or 0.0
         coh = max(m["coh"] or 0.0, 0.0)
         cov = m["cov"] or ""
@@ -683,6 +699,23 @@ def main():
         r["cov"] = cov
         r["match"] = m["match"]
 
+        # --- manual money overrides (see OVERRIDES near the top) ---
+        # Keyed by the exact `race` code, so this lookup works unchanged for
+        # both Senate ("ME") and House ("PA-10") race codes.
+        ov = OVERRIDES.get(code)
+        if ov:
+            r["receipts"] = ov["receipts"]
+            r["coh"] = ov["coh"]
+            r["proj"] = ov["proj"]
+            r["match"] = "manual"
+            r["override"] = True
+            r["note"] = ov["note"]
+            r["source"] = ov["source"]
+        else:
+            r["override"] = False
+
+        match_counts[r["match"]] = match_counts.get(r["match"], 0) + 1
+
     # electorate size / reach cost, same formula as build.py: median House N == 1
     house_Ns = [r["N"] for r in races if r["ch"] == "H" and r["N"] is not None]
     med_N = _st.median(house_Ns) if house_Ns else 1.0
@@ -699,6 +732,7 @@ def main():
         r["why"] = compute_why(r, top15)
 
     excluded_all = sorted(excluded["dem_only"] + excluded["rep_only"])
+    overridden_races = sorted(r["race"] for r in races if r.get("override"))
 
     # ---------------------------------------------------------------------
     # scoring: identical to scripts/build.py - see that file for the full
@@ -765,6 +799,7 @@ def main():
         excluded=dict(count=len(excluded_all), dem_only=len(excluded["dem_only"]),
                       rep_only=len(excluded["rep_only"]), races=excluded_all),
         match_counts=match_counts,
+        overrides=overridden_races,
     )
 
     os.makedirs(SITE, exist_ok=True)
