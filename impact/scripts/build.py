@@ -10,6 +10,24 @@ CYCLE_START = datetime.date(2025, 1, 1)
 # money can be expressed as "impression passes" (see the scoring section).
 K_DOLLARS_PER_REACH = 5000.0
 
+# Manual money overrides: race code -> hand-entered figures used instead of
+# the FEC match, for cases where FEC data is known to be wrong or missing
+# (e.g. a late-nominated replacement candidate whose committee hasn't filed
+# yet). General mechanism - add an entry here whenever this recurs.
+OVERRIDES = {
+    # race code -> manual money figures used INSTEAD of the FEC match.
+    # Only add an entry when FEC data is known to be wrong or missing.
+    "ME": dict(
+        receipts=3_000_000.0,
+        coh=2_500_000.0,
+        proj=6_000_000.0,
+        note="FEC shows $0 because Jackson's committee has not filed since his July "
+             "nomination (Q3 report due Oct 15). Press reporting: $1M+ raised by Jul 22, "
+             "plus $2M in the days after the nomination. Figures here are an estimate.",
+        source="https://spectrumlocalnews.com/me/maine/news/2026/07/27/maine-senate-race",
+    ),
+}
+
 
 def phi(z): return math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
 
@@ -165,6 +183,22 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
             calc=calc,
             Nrel=None, reach=None))          # filled in below once the House median N is known
 
+        # --- manual money overrides (see OVERRIDES near the top) ---
+        # Keyed by the exact `race` code, so this lookup works unchanged for
+        # both Senate ("ME") and House ("PA-10") race codes.
+        rec = races[-1]
+        ov = OVERRIDES.get(code)
+        if ov:
+            rec['receipts'] = ov['receipts']
+            rec['coh'] = ov['coh']
+            rec['proj'] = ov['proj']
+            rec['match'] = 'manual'
+            rec['override'] = True
+            rec['note'] = ov['note']
+            rec['source'] = ov['source']
+        else:
+            rec['override'] = False
+
 # --- reach cost: price of reaching a fixed share (say 1%) of THIS electorate ---
 # cost[] is price per constituent impression (media-market overspill).
 # Reaching 1% of the electorate costs that times the size of the electorate.
@@ -180,6 +214,11 @@ for r in races:
     r['why'] = compute_why(r, _top15)
 
 excluded_races = sorted(dem_only_races + rep_only_races)
+
+match_counts = {}
+for r in races:
+    match_counts[r['match']] = match_counts.get(r['match'], 0) + 1
+overridden_races = sorted(r['race'] for r in races if r.get('override'))
 
 # ---------------------------------------------------------------------------
 # scoring: raw marginal-impact-per-dollar at the site's default parameters.
@@ -251,6 +290,7 @@ meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
             sigma=SIG, k_dollars_per_reach=K_DOLLARS_PER_REACH,
             defaults=DEFAULTS,
             anchor=anchor, total_races=total_races, mean_raw=mean_raw,
+            match_counts=match_counts, overrides=overridden_races,
             excluded=dict(count=len(excluded_races), dem_only=len(dem_only_races),
                           rep_only=len(rep_only_races), races=excluded_races))
 json.dump(dict(meta=meta, races=races), open(os.path.join(BASE, '..', 'site', 'data.json'), 'w'),
