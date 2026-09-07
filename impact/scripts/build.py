@@ -31,9 +31,23 @@ OVERRIDES = {
         note="FEC shows $0 because Jackson's committee has not filed since his July "
              "nomination (Q3 report due Oct 15). Press reporting: $1M+ raised by Jul 22, "
              "plus $2M in the days after the nomination. Figures here are an estimate.",
+        expires="2026-10-20",
         source="https://spectrumlocalnews.com/me/maine/news/2026/07/27/maine-senate-race",
     ),
 }
+
+
+def active_overrides(today=None):
+    """OVERRIDES minus any whose `expires` date has passed."""
+    today = today or datetime.date.today()
+    out = {}
+    for race, ov in OVERRIDES.items():
+        exp = ov.get("expires")
+        if exp and datetime.date(*map(int, exp.split("-"))) < today:
+            continue
+        out[race] = ov
+    return out
+
 
 
 def phi(z): return math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
@@ -223,7 +237,7 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
         # Keyed by the exact `race` code, so this lookup works unchanged for
         # both Senate ("ME") and House ("PA-10") race codes.
         rec = races[-1]
-        ov = OVERRIDES.get(code)
+        ov = active_overrides().get(code)
         if ov:
             rec['receipts'] = ov['receipts']
             rec['coh'] = ov['coh']
@@ -263,6 +277,9 @@ overridden_races = sorted(r['race'] for r in races if r.get('override'))
 # rather than recomputing them independently. Identical logic lives in
 # scripts/refresh.py - keep the two in sync.
 # ---------------------------------------------------------------------------
+
+
+
 DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money='proj',
                 outside_mult=0.35)
 
