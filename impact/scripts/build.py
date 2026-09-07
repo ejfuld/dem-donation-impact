@@ -4,7 +4,11 @@ BASE = os.path.join(os.path.dirname(__file__), '..', 'data')
 SIG = {'H': 6.65, 'S': 6.69}
 ELECTION = datetime.date(2026, 11, 3)
 CYCLE_START = datetime.date(2025, 1, 1)
-MONEY_FLOOR = 1_000_000.0
+# $ per unit of the `reach` index (one impression to every voter in the
+# race), derived as ~$0.02/impression x ~250k median House-district
+# turnout. Converts the theta/reach price factor into a dollar figure so
+# money can be expressed as "impression passes" (see the scoring section).
+K_DOLLARS_PER_REACH = 5000.0
 
 
 def phi(z): return math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
@@ -118,7 +122,7 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
         vpi = float(r['vpi'])
 
         m = money.get(code, {})
-        receipts = float(m.get('receipts') or 0) or MONEY_FLOOR
+        receipts = float(m.get('receipts') or 0)
         coh = max(float(m.get('coh') or 0), 0.0)
         cov = m.get('covend') or ''
         # monthly contribution rate, extrapolated to election day
@@ -176,11 +180,77 @@ for r in races:
     r['why'] = compute_why(r, _top15)
 
 excluded_races = sorted(dem_only_races + rep_only_races)
+
+# ---------------------------------------------------------------------------
+# scoring: raw marginal-impact-per-dollar at the site's default parameters.
+# `anchor`/`total_races`/`mean_raw` are baked into meta so the front end (and
+# anyone re-deriving `impact` from data.json) uses the exact same numbers
+# rather than recomputing them independently. Identical logic lives in
+# scripts/refresh.py - keep the two in sync.
+# ---------------------------------------------------------------------------
+DEFAULTS = dict(c_house=25.0, senate_mult=0.80, sen_val=13.05, eta=0.6667, theta=0.40, money='proj',
+                prior_reach=60.0)
+
+# theta anchor: the MEAN reach cost across House races that could be scored,
+# replacing the old fixed "fully targetable" cost of 1.0.
+_house_calc_reach = [r['reach'] for r in races if r['ch'] == 'H' and r['calc']]
+anchor = sum(_house_calc_reach) / len(_house_calc_reach)
+
+total_races = len(races) + len(excluded_races)   # every race on the board, scored or not
+
+raw_by_race = {}
+V_by_race = {}
+for r in races:
+    if r['calc']:
+        c_eff = DEFAULTS['c_house'] * DEFAULTS['senate_mult'] if r['ch'] == 'S' else DEFAULTS['c_house']
+        w = DEFAULTS['sen_val'] if r['ch'] == 'S' else 1.0
+        V = c_eff * r['b'] + w * r['a']
+        # P_dollars: the dollar cost of one full "impression pass" (touching
+        # every voter in the race once), theta/reach-blended same as before,
+        # just converted from the `reach` index into dollars via K.
+        P_eff = DEFAULTS['theta'] * anchor + (1 - DEFAULTS['theta']) * r['reach']
+        p_dollars = P_eff * K_DOLLARS_PER_REACH
+        # passes: how many impression passes the campaign's money buys.
+        # No money floor needed any more: at money==0, passes==0 and
+        # (prior_reach + passes)**-eta is still finite (see CRRA note below).
+        passes = r[DEFAULTS['money']] / p_dollars
+        # elasticity enters twice: once widening sigma (inside `a`, above),
+        # once again here as an ease-of-persuasion multiplier on raw impact.
+        #
+        # Nrel: a dollar buys a FIXED FRACTION of reach (of P_dollars' full
+        # pass), and that same fraction touches more real voters in a larger
+        # electorate - so the value term scales up with electorate size,
+        # not down. (Previously Nrel was entirely absent from raw, which
+        # over-penalised large electorates - `a` alone carries a 1/N via
+        # invN, with nothing to offset it.)
+        #
+        # (prior_reach + passes)**-eta / p_dollars: marginal utility of one
+        # more dollar under CRRA utility u(prior_reach + D/P_dollars), i.e.
+        # u'(.) * (1/P_dollars). This replaces the old D**-eta * P**(eta-1)
+        # shape - which falls out of it exactly when passes >> prior_reach -
+        # with a version that has no singularity at D == 0 (raw is then
+        # simply V*el*Nrel*prior_reach**-eta/p_dollars, finite).
+        raw = V * r['el'] * r['Nrel'] * (DEFAULTS['prior_reach'] + passes) ** -DEFAULTS['eta'] / p_dollars
+        r['p_dollars'] = p_dollars
+        r['passes'] = passes
+    else:
+        V, raw = None, 0.0   # calc==False races score 0 but still count in the denominator
+        r['p_dollars'] = None
+        r['passes'] = None
+    V_by_race[r['race']] = V
+    raw_by_race[r['race']] = raw
+
+# mean (not max) raw score over EVERY race on the board: races with calc ==
+# False contribute 0 to the sum, and excluded races contribute 0 too (they
+# aren't in raw_by_race at all, but they are counted in total_races) - so the
+# mean race, not the top race, scores impact == 100.
+mean_raw = sum(raw_by_race.values()) / total_races
+
 meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
             n=len(races), n_calc=sum(1 for r in races if r['calc']),
-            sigma=SIG, money_floor=MONEY_FLOOR,
-            defaults=dict(c_house=25.0, senate_mult=0.75, sen_val=13.05, eta=0.72,
-                          theta=0.40, money='proj'),
+            sigma=SIG, k_dollars_per_reach=K_DOLLARS_PER_REACH,
+            defaults=DEFAULTS,
+            anchor=anchor, total_races=total_races, mean_raw=mean_raw,
             excluded=dict(count=len(excluded_races), dem_only=len(dem_only_races),
                           rep_only=len(rep_only_races), races=excluded_races))
 json.dump(dict(meta=meta, races=races), open(os.path.join(BASE, '..', 'site', 'data.json'), 'w'),
@@ -189,22 +259,12 @@ print('wrote', len(races), 'races (', meta['n_calc'], 'calc )')
 print('excluded', meta['excluded']['count'], 'races: dem_only=%d rep_only=%d' %
       (meta['excluded']['dem_only'], meta['excluded']['rep_only']), '->', excluded_races[:10])
 
-# ---- preview with default params ----
-D = meta['defaults']
+# ---- preview with default params (impact = 100 * raw / mean_raw) ----
 scored = [r for r in races if r['calc']]
 for r in scored:
-    c_eff = D['c_house'] * D['senate_mult'] if r['ch'] == 'S' else D['c_house']
-    w = D['sen_val'] if r['ch'] == 'S' else 1.0
-    V = c_eff * r['b'] + w * r['a']
-    r['V'] = V
-    money_used = max(r['proj'], MONEY_FLOOR)
-    P_eff = D['theta'] * 1.0 + (1 - D['theta']) * r['reach']
-    r['I'] = V * (money_used ** -D['eta']) * (P_eff ** (D['eta'] - 1))
-mx = max(r['I'] for r in scored)
-for r in scored:
-    r['I'] = 100 * r['I'] / mx
-print('%-7s %-18s %5s %7s %7s %9s  %s' % ('race', 'candidate', 'impact', 'cost', 'V', '$proj', 'rating'))
+    r['I'] = 100 * raw_by_race[r['race']] / mean_raw
+print('%-7s %-18s %9s %7s %7s %9s  %s' % ('race', 'candidate', 'impact', 'cost', 'V', '$proj', 'rating'))
 for r in sorted(scored, key=lambda x: -x['I'])[:20]:
-    print('%-7s %-18s %5.1f %7.1f %7.2f %9.1fM  %s' %
+    print('%-7s %-18s %9.1f %7.1f %7.2f %9.1fM  %s' %
           (r['race'] + ('*' if r['ch'] == 'S' else ''), r['name'][:18], r['I'], r['reach'],
-           r['V'], r['proj'] / 1e6, r['rating']))
+           V_by_race[r['race']], r['proj'] / 1e6, r['rating']))
