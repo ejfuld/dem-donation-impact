@@ -671,22 +671,26 @@ def find_opponent_id(race, chosen_party_bucket, fec_by_race):
 # FEC independent expenditures (schedule_e): outside/IE money, best-effort
 # ---------------------------------------------------------------------------
 
-def fetch_schedule_e_totals(office, api_key):
-    """Page through /v1/schedules/schedule_e/by_candidate/ for one office (H
-    or S): independent-expenditure totals aggregated by candidate_id +
-    support_oppose_indicator, for cycle=2026 with election_full=true (the
-    whole two-year cycle, not just the current filing period). Queried in
-    bulk (all candidates for the office in one paged pull) rather than per
-    candidate. Returns a list of result dicts, each expected to carry
-    candidate_id, support_oppose_indicator ("S" or "O") and a total dollar
-    figure."""
+def fetch_schedule_e_totals(office, state, api_key):
+    """Page through /v1/schedules/schedule_e/by_candidate/ for one
+    (office, state) pair.
+
+    The endpoint's validator is fussy and cost us a silent failure once:
+      - `office` must be the WORD "house"/"senate", not the "H"/"S" codes
+        every other FEC endpoint uses;
+      - `cycle` is required;
+      - with office=house (and senate) a `state` argument is ALSO required,
+        so this cannot be pulled in one bulk call - it is per state.
+    Returns a list of result dicts carrying candidate_id,
+    support_oppose_indicator ("S"/"O") and a total dollar figure."""
     results = []
     page = 1
-    while True:
+    while page <= 50:  # hard stop; no state has anywhere near this many pages
         params = dict(
             api_key=api_key,
             cycle=2026,
             office=office,
+            state=state,
             election_full="true",
             per_page=100,
             page=page,
@@ -705,26 +709,42 @@ def fetch_schedule_e_totals(office, api_key):
         if total_pages is None and len(page_results) < params["per_page"]:
             break
         page += 1
-        time.sleep(0.2)  # be polite even with a real API key
+        time.sleep(0.15)
     return results
 
 
-def build_outside_index(api_key):
-    """(candidate_id, "S"|"O") -> total independent-expenditure dollars,
-    pulled in bulk across House + Senate, cycle=2026, election_full=true.
-    Best-effort: callers decide what to do if the whole pull fails (see
-    main()) - this data is unlike the Silver Bulletin forecast, which is
-    load-bearing."""
+def build_outside_index(api_key, states_by_office):
+    """(candidate_id, "S"|"O") -> total independent-expenditure dollars.
+
+    Queried per (office, state) because the endpoint demands a state. Only
+    states that actually have a tracked race are queried, which keeps this
+    to roughly 80 requests rather than 100+. Best-effort throughout: a
+    single state failing is logged and skipped rather than losing the whole
+    pull, and main() decides what to do if everything fails."""
     lookup = {}
-    for office in ("H", "S"):
-        for rec in fetch_schedule_e_totals(office, api_key):
-            cid = (rec.get("candidate_id") or "").strip()
-            ind = (rec.get("support_oppose_indicator") or "").strip().upper()
-            if not cid or ind not in ("S", "O"):
+    ok_states = 0
+    failed = []
+    for office, states in states_by_office.items():
+        for state in sorted(states):
+            try:
+                recs = fetch_schedule_e_totals(office, state, api_key)
+            except Exception as exc:  # noqa: BLE001 - best-effort by design
+                failed.append("%s/%s: %s" % (office, state, exc))
                 continue
-            total = float(rec.get("total") or 0.0)
-            key = (cid, ind)
-            lookup[key] = lookup.get(key, 0.0) + total
+            ok_states += 1
+            for rec in recs:
+                cid = (rec.get("candidate_id") or "").strip()
+                ind = (rec.get("support_oppose_indicator") or "").strip().upper()
+                if not cid or ind not in ("S", "O"):
+                    continue
+                total = float(rec.get("total") or 0.0)
+                key = (cid, ind)
+                lookup[key] = lookup.get(key, 0.0) + total
+    if failed:
+        sys.stderr.write("schedule_e: %d state pulls failed: %s\n"
+                         % (len(failed), "; ".join(failed[:5])))
+    sys.stderr.write("schedule_e: %d state pulls ok, %d (candidate,S/O) totals\n"
+                     % (ok_states, len(lookup)))
     return lookup
 
 
@@ -797,7 +817,13 @@ def main():
     # failing - this is best-effort, unlike the Silver Bulletin data.
     outside_lookup = None
     try:
-        outside_lookup = build_outside_index(api_key)
+        # Only query states that actually have a tracked race; the endpoint
+        # demands office+cycle+state, so this is ~80 requests not 100+.
+        states_by_office = {"house": set(), "senate": set()}
+        for _r in races:
+            _st_code = _r["race"].split("-")[0] if _r["ch"] == "H" else _r["race"]
+            states_by_office["house" if _r["ch"] == "H" else "senate"].add(_st_code)
+        outside_lookup = build_outside_index(api_key, states_by_office)
         print("FEC: pulled independent-expenditure totals covering %d (candidate,S/O) pairs" %
               len(outside_lookup))
     except Exception as e:
