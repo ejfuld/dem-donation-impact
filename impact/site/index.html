@@ -281,6 +281,20 @@
   .marker.warn{background:var(--warn-bg);color:var(--warn);}
   .marker.rcv{background:var(--code-bg);color:var(--muted);border:1px solid var(--border);}
 
+  /* Manual money override marker: a superscript dagger, deliberately not a
+     chip like .warn/.rcv above, so it reads as a footnote reference rather
+     than a data-quality badge. */
+  .override-mark{
+    display:inline;
+    vertical-align:super;
+    font-size:.72em;
+    line-height:0;
+    margin-left:2px;
+    font-weight:700;
+    color:var(--accent);
+    cursor:help;
+  }
+
   .donate-btn{
     display:inline-block;
     background:var(--accent);
@@ -587,6 +601,7 @@
     </div>
 
     <p class="exclusion-note" id="exclusion-note"></p>
+    <p class="exclusion-note" id="override-note" hidden></p>
   </section>
 
   <section class="controls">
@@ -938,6 +953,7 @@
     var row = {
       race: r.race, ch: r.ch, name: r.name, party: r.party, rating: r.rating,
       p: r.p, margin: r.margin, match: r.match, cov: r.cov,
+      override: !!r.override, note: r.note || "", source: r.source || "",
       why: r.why || [], calc: calc,
       reach: calc ? r.reach : null,
       moneyDefRaw: M, moneyUsed: M,
@@ -1077,6 +1093,11 @@
       if (r.race.indexOf("AK") === 0) {
         ak = '<span class="marker rcv" title="Alaska uses ranked-choice voting; the two-candidate margin model here is approximate.">RCV</span>';
       }
+      var overrideMark = "";
+      if (r.override) {
+        overrideMark = '<sup class="override-mark" title="' + escapeHtml(r.note) +
+          '">&dagger;</sup>';
+      }
       var covNote = r.cov ? (" (as of " + escapeHtml(r.cov) + ")") : "";
       var moneyTitle = "Raw " + moneyLabel + ": " + fmtMoney(r.moneyDefRaw) + covNote + ".";
       // Real em dash character for a missing rating — never the "&mdash;" entity
@@ -1115,7 +1136,7 @@
         '<td class="rank-cell">' + rankText + '</td>' +
         '<td class="num impact-td">' + impactCell + '</td>' +
         '<td>' + escapeHtml(r.race) + ak + '</td>' +
-        '<td>' + escapeHtml(r.name) + warn + '</td>' +
+        '<td>' + escapeHtml(r.name) + warn + overrideMark + '</td>' +
         '<td><span class="pill' + (r.ch === "S" ? " senate" : "") + '">' + (r.ch === "S" ? "Senate" : "House") + '</span></td>' +
         '<td>' + ratingText + '</td>' +
         '<td class="num">' + pCell + '</td>' +
@@ -1257,11 +1278,37 @@
     }
   }
 
+  // Second small-print footnote, next to the exclusion note: lists any race
+  // whose money figures are a hand-entered override rather than FEC-derived
+  // (see OVERRIDES in scripts/build.py / scripts/refresh.py). Renders
+  // nothing when meta.overrides is empty.
+  function renderOverrideNote(meta, races){
+    var el = $("override-note");
+    if (!el) return;
+    var codes = meta.overrides || [];
+    if (!codes.length) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    var byCode = {};
+    races.forEach(function(r){ byCode[r.race] = r; });
+    var sentences = codes.map(function(code){
+      var r = byCode[code];
+      var note = (r && r.note) || "";
+      return "Money figures for " + escapeHtml(code) +
+        " are a manual estimate rather than FEC-reported. " + escapeHtml(note);
+    });
+    el.innerHTML = sentences.join(" ");
+    el.hidden = false;
+  }
+
   function init(data){
     ALL_RACES = data.races || [];
     META = data.meta || {};
     $("forecast-date").textContent = META.forecast_date || "unknown";
     renderExclusionNote(META);
+    renderOverrideNote(META, ALL_RACES);
     var kEl = $("k-dollars");
     if (kEl && META.k_dollars_per_reach != null) kEl.textContent = fmtMoney(META.k_dollars_per_reach);
 
