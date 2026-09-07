@@ -11,18 +11,24 @@ Race selection:
     (D-vs-D top-two races, R-vs-R top-two races, or a plain unopposed seat)
     is dropped entirely and tallied into meta["excluded"].
   - A kept race with tipping <= 0 has an undefined `a` (a = vpi/tipping,
-    a division by zero) - it stays in the data with calc=False and a=None
-    rather than being silently dropped, since b (=vpi) and every
-    money-related field are still perfectly well-defined for it.
+    a division by zero) - it stays in the data with calc=False and a=b=None
+    rather than being silently dropped (b = a * tipping is equally undefined
+    when a is), since every money-related field is still perfectly
+    well-defined for it.
 
 Failure policy:
   - Silver Bulletin data (the forecast itself) is load-bearing. If it cannot
     be fetched, this script fails loudly (non-zero exit) rather than writing
     stale or partial data.
-  - FEC money data is best-effort. If the FEC pull fails outright, we fall
-    back to whatever money fields (receipts/coh/proj/rate/cov/match) already
-    exist for that race in the previous site/data.json, so the site keeps
-    working (with a floor value) rather than breaking the whole refresh.
+  - FEC candidate-totals money data is best-effort. If the FEC pull fails
+    outright, we fall back to whatever money fields
+    (receipts/coh/proj/rate/cov/match) already exist for that race in the
+    previous site/data.json, so the site keeps working (with a floor value)
+    rather than breaking the whole refresh.
+  - FEC schedule_e (outside/independent-expenditure) money is best-effort
+    too, and tracked separately from the candidate-totals pull above: if it
+    fails outright, every race's outside_support/outside_oppose/
+    outside_total just default to 0.0 rather than failing the run.
 """
 import csv
 import datetime
@@ -53,6 +59,13 @@ CYCLE_START = datetime.date(2025, 1, 1)
 # money can be expressed as "impression passes" (see the scoring section).
 K_DOLLARS_PER_REACH = 5000.0
 
+# Fixed model constant, deliberately NOT user-tunable: every campaign is
+# treated as already having reached its electorate this many times before
+# any donation. It only exists to keep the marginal value of the first
+# dollar finite; it is a fudge factor with no empirical grounding, so it is
+# not exposed as a degree of freedom.
+PRIOR_REACH = 1.0
+
 # Manual money overrides: race code -> hand-entered figures used instead of
 # the FEC match, for cases where FEC data is known to be wrong or missing
 # (e.g. a late-nominated replacement candidate whose committee hasn't filed
@@ -71,8 +84,8 @@ OVERRIDES = {
     ),
 }
 
-DEFAULTS = dict(c_house=25.0, senate_mult=0.80, sen_val=13.05, eta=0.6667, theta=0.40, money="proj",
-                prior_reach=60.0)
+DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money="proj",
+                outside_mult=0.35)
 
 # Datawrapper chart ids + a known-good version to start probing upward from.
 CHARTS = {
@@ -83,6 +96,7 @@ CHARTS = {
 }
 
 FEC_BASE_URL = "https://api.open.fec.gov/v1/candidates/totals/"
+FEC_SCHEDULE_E_URL = "https://api.open.fec.gov/v1/schedules/schedule_e/by_candidate/"
 USER_AGENT = "impact-refresh/1.0 (+https://github.com/; static site data refresh script)"
 HTTP_TIMEOUT = 25
 MAX_VERSION_PROBE = 250  # safety cap so a probing loop can never run forever
@@ -412,9 +426,19 @@ def build_races():
 
             # tipping <= 0 would make invN = vpi/tipping a division by zero,
             # so `a` is genuinely undefined there - keep the race, but mark
-            # it uncalculated rather than fake a number.
+            # it uncalculated rather than fake a number. `b` (oc P(one vote
+            # flips the chamber)) is an independence decomposition, not
+            # Silver's raw VPI directly: P(one vote flips the chamber) =
+            # P(one vote flips the seat) x P(this seat is the tipping point)
+            # = a * tipping. That guarantees b <= a (tipping is a
+            # probability) and removes the unknown scaling constant that
+            # using vpi directly left between a and b. `vpi` is still
+            # carried on the race dict for reference - it must not drive
+            # scoring any more. Identical logic lives in scripts/build.py -
+            # keep the two in sync.
             if tip <= 0:
                 a = None
+                b = None
                 N = None
                 calc = False
             else:
@@ -422,6 +446,7 @@ def build_races():
                 sig = SIG[ch] * el
                 invN = vpi["vpi"] / tip
                 a = invN * phi(z) / sig
+                b = a * tip
                 N = 1.0 / invN
                 calc = True
 
@@ -435,7 +460,7 @@ def build_races():
                 rating=rating,
                 tip=tip, vpi=vpi["vpi"], el=el, p=p,
                 margin=margin,
-                a=a, b=vpi["vpi"], N=N, calc=calc,
+                a=a, b=b, N=N, calc=calc,
             ))
     return out, fetched_versions, excluded, chosen_party
 
@@ -510,16 +535,17 @@ def build_fec_indexes(api_key):
             race = race_code_from_fec(office, state, district)
             receipts = float(fec_field(rec, "receipts", default=0) or 0)
             coh = float(fec_field(rec, "cash_on_hand_end_period", "last_cash_on_hand_end_period", default=0) or 0)
-            cov = fec_field(rec, "coverage_end_date", "last_report_date", default="") or ""
+           cov = fec_field(rec, "coverage_end_date", "last_report_date", default="") or ""
             cov = str(cov)[:10]  # YYYY-MM-DD if present
             name = fec_field(rec, "name", "candidate_name", default="") or ""
-            party = fec_field(rec, "party", "party_full", default="") or ""
+            party = fec_field(rec, "party", "party_full", default="") or """
             cand = dict(
                 receipts=receipts, coh=coh, cov=cov,
                 last_name_norm=norm_last_name(fec_last_name(name)),
                 party=party_bucket(party),
                 candidate_status=fec_field(rec, "candidate_status", default=None),
                 is_active_candidate=fec_field(rec, "is_active_candidate", default=None),
+                candidate_id=(fec_field(rec, "candidate_id", default="") or ""),
             )
             fec_by_race.setdefault(race, []).append(cand)
             fec_by_state.setdefault((state, office), []).append(cand)
@@ -548,20 +574,23 @@ def match_money(race, ch, dem_last_name, chosen_party, fec_by_race, fec_by_state
         exact = [c for c in same if c["last_name_norm"] == target]
         if exact:
             c = best_candidate(exact)
-            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="name")
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="name",
+                        candidate_id=c["candidate_id"])
 
         # tier 2: substring match either direction, same state+district
         sub = [c for c in same if c["last_name_norm"]
                and (target in c["last_name_norm"] or c["last_name_norm"] in target)]
         if sub:
             c = best_candidate(sub)
-            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="fuzzy")
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="fuzzy",
+                        candidate_id=c["candidate_id"])
 
         # tier 3: edit distance <= 2, same state+district
         near = [c for c in same if c["last_name_norm"] and levenshtein(target, c["last_name_norm"]) <= 2]
         if near:
             c = best_candidate(near)
-            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="edit")
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="edit",
+                        candidate_id=c["candidate_id"])
 
         # tier 4: exact match anywhere in the same state, ignoring district
         # (catches redistricting, where the FEC record still carries the old
@@ -571,7 +600,8 @@ def match_money(race, ch, dem_last_name, chosen_party, fec_by_race, fec_by_state
             state_exact = [c for c in state_cands if c["last_name_norm"] == target]
             if state_exact:
                 c = best_candidate(state_exact)
-                return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="state")
+                return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="state",
+                        candidate_id=c["candidate_id"])
 
     # tier 5: give up on name-matching, just pick someone in this race.
     # `same` can now hold every party (fetch_fec_totals no longer filters to
@@ -585,19 +615,98 @@ def match_money(race, ch, dem_last_name, chosen_party, fec_by_race, fec_by_state
         dem_same = [c for c in same if c["party"] == "D"]
         if dem_same:
             c = best_candidate(dem_same)
-            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$")
+            return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$",
+                        candidate_id=c["candidate_id"])
 
         if chosen_party == "I" and target:
             named = [c for c in same if c["last_name_norm"]]
             if named:
                 c = min(named, key=lambda c: levenshtein(target, c["last_name_norm"]))
-                return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$")
+                return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$",
+                            candidate_id=c["candidate_id"])
 
         c = best_candidate(same)
-        return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$")
+        return dict(receipts=c["receipts"], coh=c["coh"], cov=c["cov"], match="top$",
+                    candidate_id=c["candidate_id"])
 
     # tier 6: nothing
-    return dict(receipts=0.0, coh=0.0, cov="", match="none")
+    return dict(receipts=0.0, coh=0.0, cov="", match="none", candidate_id="")
+
+
+def find_opponent_id(race, chosen_party_bucket, fec_by_race):
+    """This race's main opponent, for the outside-money lookup below: the
+    highest-receipts FEC candidate in the same state+district whose party
+    bucket differs from the chosen Democratic-or-independent candidate's
+    (`chosen_party_bucket`, "D" or "I" - see build_races()). Returns the
+    opponent's FEC candidate_id, or None if no such candidate is present in
+    the FEC data for this race."""
+    same = fec_by_race.get(race) or []
+    opp_candidates = [c for c in same if c["party"] != chosen_party_bucket and c.get("candidate_id")]
+    if not opp_candidates:
+        return None
+    c = max(opp_candidates, key=lambda c: c.get("receipts", 0.0))
+    return c["candidate_id"]
+
+
+# ---------------------------------------------------------------------------
+# FEC independent expenditures (schedule_e): outside/IE money, best-effort
+# ---------------------------------------------------------------------------
+
+def fetch_schedule_e_totals(office, api_key):
+    """Page through /v1/schedules/schedule_e/by_candidate/ for one office (H
+    or S): independent-expenditure totals aggregated by candidate_id +
+    support_oppose_indicator, for cycle=2026 with election_full=true (the
+    whole two-year cycle, not just the current filing period). Queried in
+    bulk (all candidates for the office in one paged pull) rather than per
+    candidate. Returns a list of result dicts, each expected to carry
+    candidate_id, support_oppose_indicator ("S" or "O") and a total dollar
+    figure."""
+    results = []
+    page = 1
+    while True:
+        params = dict(
+            api_key=api_key,
+            cycle=2026,
+            office=office,
+            election_full="true",
+            per_page=100,
+            page=page,
+        )
+        url = FEC_SCHEDULE_E_URL + "?" + urllib.parse.urlencode(params)
+        raw = http_get(url)
+        payload = json.loads(raw.decode("utf-8"))
+        page_results = payload.get("results") or []
+        results.extend(page_results)
+        pagination = payload.get("pagination") or {}
+        total_pages = pagination.get("pages")
+        if not page_results:
+            break
+        if total_pages is not None and page >= total_pages:
+            break
+        if total_pages is None and len(page_results) < params["per_page"]:
+            break
+        page += 1
+        time.sleep(0.2)  # be polite even with a real API key
+    return results
+
+
+def build_outside_index(api_key):
+    """(candidate_id, "S"|"O") -> total independent-expenditure dollars,
+    pulled in bulk across House + Senate, cycle=2026, election_full=true.
+    Best-effort: callers decide what to do if the whole pull fails (see
+    main()) - this data is unlike the Silver Bulletin forecast, which is
+    load-bearing."""
+    lookup = {}
+    for office in ("H", "S"):
+        for rec in fetch_schedule_e_totals(office, api_key):
+            cid = (rec.get("candidate_id") or "").strip()
+            ind = (rec.get("support_oppose_indicator") or "").strip().upper()
+            if not cid or ind not in ("S", "O"):
+                continue
+            total = float(rec.get("total") or 0.0)
+            key = (cid, ind)
+            lookup[key] = lookup.get(key, 0.0) + total
+    return lookup
 
 
 # ---------------------------------------------------------------------------
@@ -662,19 +771,41 @@ def main():
         fec_by_race = None
         fec_by_state = None
 
+    # 3) FEC independent expenditures (schedule_e). Best-effort like the
+    # money pull above, but tracked separately: it's fine for this to fail
+    # even when the candidate-totals pull above succeeded. On total failure,
+    # every race's outside_* fields default to 0.0 rather than the run
+    # failing - this is best-effort, unlike the Silver Bulletin data.
+    outside_lookup = None
+    try:
+        outside_lookup = build_outside_index(api_key)
+        print("FEC: pulled independent-expenditure totals covering %d (candidate,S/O) pairs" %
+              len(outside_lookup))
+    except Exception as e:
+        print("WARNING: FEC schedule_e (outside money) pull failed (%s); outside_* fields default to 0.0" % e,
+              file=sys.stderr)
+        outside_lookup = None
+
     cost_idx = load_cost_index()
 
     match_counts = {"name": 0, "fuzzy": 0, "edit": 0, "state": 0, "top$": 0, "none": 0}
 
     for r in races:
         code = r["race"]
+        prev = prev_by_race.get(code) or {}
         if fec_by_race is not None:
             m = match_money(code, r["ch"], r["name"], chosen_party_by_race.get(code, "D"),
                              fec_by_race, fec_by_state)
+            cand_id = m.get("candidate_id") or None
+            opp_id = find_opponent_id(code, chosen_party_by_race.get(code, "D"), fec_by_race)
         else:
-            prev = prev_by_race.get(code) or {}
             m = dict(receipts=prev.get("receipts", 0.0), coh=prev.get("coh", 0.0),
                       cov=prev.get("cov", ""), match=prev.get("match", "none"))
+            # candidate-totals pull failed outright, so there's no fresh FEC
+            # candidate_id to resolve either side from - fall back to
+            # whatever this race's opp_id was on the last successful run.
+            cand_id = None
+            opp_id = prev.get("opp_id")
 
         receipts = m["receipts"] or 0.0
         coh = max(m["coh"] or 0.0, 0.0)
@@ -714,6 +845,23 @@ def main():
         else:
             r["override"] = False
 
+        r["opp_id"] = opp_id
+
+        # outside/independent-expenditure money that helps this race's
+        # Democratic-aligned candidate: IE dollars SUPPORTING them directly,
+        # plus IE dollars OPPOSING their main opponent. Both default to 0.0
+        # when unknown (no cand_id/opp_id to key on, or the schedule_e pull
+        # failed entirely) - never None, same as every other money field.
+        if outside_lookup is not None:
+            outside_support = outside_lookup.get((cand_id, "S"), 0.0) if cand_id else 0.0
+            outside_oppose = outside_lookup.get((opp_id, "O"), 0.0) if opp_id else 0.0
+        else:
+            outside_support = 0.0
+            outside_oppose = 0.0
+        r["outside_support"] = outside_support
+        r["outside_oppose"] = outside_oppose
+        r["outside_total"] = outside_support + outside_oppose
+
         match_counts[r["match"]] = match_counts.get(r["match"], 0) + 1
 
     # electorate size / reach cost, same formula as build.py: median House N == 1
@@ -733,6 +881,14 @@ def main():
 
     excluded_all = sorted(excluded["dem_only"] + excluded["rep_only"])
     overridden_races = sorted(r["race"] for r in races if r.get("override"))
+
+    # money_eff: the money the campaign effectively commands - its own
+    # selected money figure, plus outside/IE spending that helps it,
+    # discounted by outside_mult (candidates get the statutory lowest unit
+    # rate for broadcast, outside groups don't - see build.py for the full
+    # note). Computed for every race, calc or not, same as proj/receipts/coh.
+    for r in races:
+        r["money_eff"] = r[DEFAULTS["money"]] + DEFAULTS["outside_mult"] * r["outside_total"]
 
     # ---------------------------------------------------------------------
     # scoring: identical to scripts/build.py - see that file for the full
@@ -758,10 +914,12 @@ def main():
             # before, just converted from the `reach` index into dollars via K.
             P_eff = DEFAULTS["theta"] * anchor + (1 - DEFAULTS["theta"]) * r["reach"]
             p_dollars = P_eff * K_DOLLARS_PER_REACH
-            # passes: how many impression passes the campaign's money buys.
-            # No money floor needed any more: at money==0, passes==0 and
-            # (prior_reach + passes)**-eta is still finite (see build.py).
-            passes = r[DEFAULTS["money"]] / p_dollars
+            # passes: how many impression passes the campaign's money buys,
+            # out of money_eff (its own money plus discounted outside money)
+            # rather than the raw money field alone. No money floor needed
+            # any more: at money==0, passes==0 and (prior_reach + passes)
+            # **-eta is still finite (see build.py).
+            passes = r["money_eff"] / p_dollars
             # elasticity enters twice: once widening sigma (inside `a`,
             # computed above in build_races()), once again here as an
             # ease-of-persuasion multiplier on raw impact. Nrel: a dollar
@@ -771,7 +929,7 @@ def main():
             # shape, which replaces the old money**-eta * P**(eta-1) form
             # (equivalent when passes >> prior_reach, finite at money == 0).
             raw_by_race[r["race"]] = (
-                V * r["el"] * r["Nrel"] * (DEFAULTS["prior_reach"] + passes) ** -DEFAULTS["eta"] / p_dollars
+                V * r["el"] * r["Nrel"] * (PRIOR_REACH + passes) ** -DEFAULTS["eta"] / p_dollars
             )
             r["p_dollars"] = p_dollars
             r["passes"] = passes
@@ -786,6 +944,10 @@ def main():
     # total_races) - so the mean race, not the top race, scores impact == 100.
     mean_raw = sum(raw_by_race.values()) / total_races
 
+    outside_vals = [r["outside_total"] for r in races]
+    outside_totals = dict(races_with_outside=sum(1 for v in outside_vals if v > 0),
+                           sum=sum(outside_vals))
+
     meta = dict(
         forecast_date=datetime.date.today().isoformat(),
         built=datetime.date.today().isoformat(),
@@ -794,12 +956,13 @@ def main():
         sigma=SIG,
         k_dollars_per_reach=K_DOLLARS_PER_REACH,
         defaults=DEFAULTS,
-        anchor=anchor, total_races=total_races, mean_raw=mean_raw,
+        anchor=anchor, total_races=total_races, mean_raw=mean_raw, prior_reach=PRIOR_REACH,
         chart_versions=chart_versions,
         excluded=dict(count=len(excluded_all), dem_only=len(excluded["dem_only"]),
                       rep_only=len(excluded["rep_only"]), races=excluded_all),
         match_counts=match_counts,
         overrides=overridden_races,
+        outside_totals=outside_totals,
     )
 
     os.makedirs(SITE, exist_ok=True)
@@ -810,6 +973,7 @@ def main():
     print("excluded %d races: dem_only=%d rep_only=%d" %
           (meta["excluded"]["count"], meta["excluded"]["dem_only"], meta["excluded"]["rep_only"]))
     print("FEC match tiers: %s" % match_counts)
+    print("outside totals: %s" % outside_totals)
 
 
 if __name__ == "__main__":
