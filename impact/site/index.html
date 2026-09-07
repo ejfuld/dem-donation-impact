@@ -174,7 +174,7 @@
   table{
     border-collapse:collapse;
     width:100%;
-    min-width:940px;
+    min-width:1140px;
     font-size:.87rem;
   }
   thead th{
@@ -523,9 +523,10 @@
       <strong>Impact</strong> is a marginal-impact-per-dollar score: how much one more dollar to a given
       race is expected to move the chance of flipping that seat and the chance that seat flips control of its
       chamber, discounted for how expensive it is to reach voters there and for how much money the campaign
-      already has. Scores are normalized so the single highest-impact race among those currently shown always
-      reads <strong>100.0</strong>; every other race is relative to it. Adjust the assumptions below — the
-      whole table recalculates live, nothing reloads.
+      already has. Scores are normalized so the <strong>average race on the whole board scores 100</strong> —
+      a race scoring 300 is worth about three average races, one scoring 16 about a sixth of one — and that
+      average is fixed across the full race set, so scores don't shift just because you filter or search.
+      Adjust the assumptions below — the whole table recalculates live, nothing reloads.
     </p>
   </header>
 
@@ -558,8 +559,10 @@
             <th class="sortable" data-key="rating">Rating <span class="arrow"></span></th>
             <th class="sortable num" data-key="p">Dem win % <span class="arrow"></span></th>
             <th class="sortable num" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
+            <th class="sortable num" data-key="pDollars" title="Dollar cost of one full impression pass into this race (theta-blended with the board's anchor cost)">Pass cost <span class="arrow"></span></th>
+            <th class="sortable num" data-key="passes" title="Impression passes the campaign's chosen money figure buys, before the head-start bonus">Passes <span class="arrow"></span></th>
             <th class="sortable num" data-key="money">Money used <span class="arrow"></span></th>
-            <th title="Top 25 races overall, by impact">Why</th>
+            <th title="Rule-based tags summarizing why this race is notable">Why</th>
             <th>Donate</th>
           </tr>
         </thead>
@@ -600,10 +603,10 @@
 
         <div class="control">
           <div class="control-widget">
-            <label for="eta">Bang for buck: low cost vs diminishing returns <span class="val" id="eta-val">0.72</span></label>
+            <label for="eta">Bang for buck: low cost vs diminishing returns <span class="val" id="eta-val">0.67</span></label>
             <div class="slider-box">
-              <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.72">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.7245)" title="default 0.72"></div>
+              <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.6667">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.67010)" title="default 0.67"></div>
             </div>
             <div class="range-labels"><span>0.01</span><span>0.99</span></div>
           </div>
@@ -613,10 +616,10 @@
               ignored. At 1, only diminishing returns to the war chest matter and differences in the cost of
               reaching voters are ignored. In between, both count, with more weight on diminishing returns the
               higher this goes.</p>
-            <p class="extra">Default 0.72 comes from Jacobson (1990), whose Box-Cox estimate of the concavity of
-              challenger House spending was lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04); since votes scale as
-              spending<sup>lambda</sup>, eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda.</p>
-            <p class="extra"><strong>How solid is this?</strong> Thinner than it looks. Jacobson (1990) is the only study that actually estimated this curvature rather than assuming it. Gerber (1998) and Gordon &amp; Hartmann (2013) impose a logarithmic form (which would imply eta&nbsp;&rarr;&nbsp;1) as a modelling prior, not a finding; Spenkuch &amp; Toniatti (2018) impose a linear one (eta&nbsp;=&nbsp;0) and flag it in a footnote as a simplification; and Levitt (1994) &mdash; the most causally credible design, using repeat challengers to difference out candidate quality &mdash; could not distinguish linear from square-root from logarithmic, because the estimates were too noisy. Kalla &amp; Broockman (2018), pooling 40 field experiments, put marginal persuasion in general elections near zero. So treat roughly 0.5&ndash;0.85 as the honest range. Most of the ranking holds across it, but not all: the Alaska Senate race falls from 4th to 20th as this slider moves from 0.50 to 0.85, because Alaska has both the cheapest media market in the country and a large war chest, and this control decides which of the two the model weighs.</p>
+            <p class="extra">Default 0.6667 (2/3) draws on Jacobson (1990), whose Box-Cox estimate of the
+              concavity of challenger House spending was lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04); since votes
+              scale as spending<sup>lambda</sup>, eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72.
+              2/3 is used here as a round default sitting within that estimate's uncertainty band.</p>
           </div>
         </div>
 
@@ -639,10 +642,10 @@
 
         <div class="control">
           <div class="control-widget">
-            <label for="senate_mult">Senate control multiplier <span class="val" id="senate_mult-val">0.75</span></label>
+            <label for="senate_mult">Senate control multiplier <span class="val" id="senate_mult-val">0.80</span></label>
             <div class="slider-box">
-              <input type="range" id="senate_mult" min="0" max="3" step="0.05" value="0.75">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.25)" title="default 0.75"></div>
+              <input type="range" id="senate_mult" min="0" max="3" step="0.05" value="0.80">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.26667)" title="default 0.80"></div>
             </div>
             <div class="range-labels"><span>0</span><span>3</span></div>
           </div>
@@ -650,7 +653,7 @@
             <span class="term">What this is</span>
             <p>How much the tipping-point Senate seat is worth relative to the House control weight. 1.0 means
               the same control bonus applies to both chambers.</p>
-            <p class="extra">Default 0.75 because a non-tipping Senate seat can still move the tipping point in
+            <p class="extra">Default 0.80 because a non-tipping Senate seat can still move the tipping point in
               the next two cycles, and because the Senate has thresholds beyond a bare majority (60 for
               cloture, two-thirds for treaties and impeachment convictions), whereas the House is purely
               majoritarian with every seat contested every cycle.</p>
@@ -700,6 +703,26 @@
 
         <div class="control">
           <div class="control-widget">
+            <label for="prior_reach">Head start <span class="val" id="prior_reach-val">60</span></label>
+            <div class="slider-box">
+              <input type="range" id="prior_reach" min="0" max="200" step="5" value="60">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.30)" title="default 60"></div>
+            </div>
+            <div class="range-labels"><span>0</span><span>200</span></div>
+          </div>
+          <div class="control-def">
+            <span class="term">What this is</span>
+            <p>Every campaign is treated as already having reached its electorate this many times before any
+              donation, so no candidate is scored as having infinitely valuable first dollars. This stands in
+              for everything besides the candidate's own reported cash that already puts messages in front of
+              voters — party committees, outside spending and earned media — and it scales with how expensive
+              the race is rather than being a flat dollar floor. At 60 that is roughly $2.6M of equivalent
+              reach for a typical House race.</p>
+          </div>
+        </div>
+
+        <div class="control">
+          <div class="control-widget">
             <span class="control-title" style="font-weight:600;font-size:.92rem;display:block;margin-bottom:6px;">Definition of how much money they already have</span>
             <div class="radio-group" id="money-group">
               <label><input type="radio" name="money" value="proj" checked> Cash on hand + projected contributions (default)</label>
@@ -713,8 +736,9 @@
               diminishing returns. <strong>Cash on hand + projected contributions</strong> extrapolates each
               campaign's recent monthly fundraising rate out to Election Day; <strong>total receipts</strong> is
               everything raised so far this cycle; <strong>cash on hand</strong> is only what's currently
-              banked. Whichever figure is chosen is floored so that a campaign with little or no reported money
-              isn't treated as having infinite marginal value.</p>
+              banked. Whichever figure is chosen is used as reported, with no minimum floor — it's the
+              "Head start" slider above, not this one, that keeps a campaign with little or no reported money
+              from being scored as having infinitely valuable first dollars.</p>
           </div>
         </div>
 
@@ -745,36 +769,61 @@
           Power Index for the race &mdash; the modeled probability that this specific seat ends up being the
           tipping-point seat for chamber control, per vote cast there. It is largest in races that are both
           close and pivotal to the chamber majority.</p>
-        <p><strong>Reach cost.</strong> A dollar spent on broadcast advertising pays for impressions across an
-          entire media market, not just the district, so in a district that shares an expensive market with
-          other, more populous or more numerous constituencies, much of that spending reaches voters who
-          cannot cast a vote in this race. Reach cost (<code>reach</code>) is that per-constituent media-market
-          overspill factor multiplied by the relative size of the race's own electorate (median House district
-          =&nbsp;1.0) &mdash; in other words, what it actually costs a campaign to put a message in front of a
-          fixed share, here 1%, of its electorate. The <code>theta</code> slider blends that reach cost with
-          a "fully targetable, equal everywhere" cost of 1.0: <code>P_eff&nbsp;=&nbsp;theta&nbsp;+&nbsp;(1&minus;theta)&middot;reach</code>.</p>
-        <p><strong>Diminishing returns.</strong> A campaign that already has a lot of money gets less marginal
-          benefit from one more dollar than a campaign that is still building out its operation. We model this
-          with a power discount on the campaign's existing money, <code>money<sup>&minus;eta</sup></code>, and
-          the same discount applies to reach cost with the complementary exponent,
-          <code>P_eff<sup>eta&minus;1</sup></code> &mdash; so a race that is expensive to advertise into needs
-          more dollars to have the same effect as a cheap one. Default eta&nbsp;=&nbsp;0.72 follows Jacobson
-          (1990)'s Box-Cox estimate that challenger House spending is concave with lambda&nbsp;=&nbsp;0.28, so
-          eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda. "Money" itself is whichever definition is selected above,
-          floored at $1,000,000 (<code>money_floor</code> in the data) so that a campaign with almost no
-          reported money isn't treated as having spuriously infinite marginal value.</p>
+        <p><strong>Reach cost, and turning it into dollars.</strong> A dollar spent on broadcast advertising
+          pays for impressions across an entire media market, not just the district, so in a district that
+          shares an expensive market with other, more populous or more numerous constituencies, much of that
+          spending reaches voters who cannot cast a vote in this race. Reach cost (<code>reach</code>) is that
+          per-constituent media-market overspill factor multiplied by the relative size of the race's own
+          electorate (median House district&nbsp;=&nbsp;1.0) &mdash; in other words, what it actually costs a
+          campaign to put a message in front of a fixed share, here 1%, of its electorate. The
+          <code>theta</code> slider blends that race-specific reach cost with <code>anchor</code>, the mean
+          reach cost across scorable House races &mdash; a stand-in for "fully targetable, priced like an
+          average race" spending: <code>P_dollars&nbsp;=&nbsp;(theta&middot;anchor&nbsp;+&nbsp;(1&minus;theta)&middot;reach)&nbsp;&times;&nbsp;K</code>.
+          <code>K</code> (<span id="k-dollars">$5,000</span>) converts that index into an actual dollar figure
+          &mdash; the price of one full "impression pass," touching every voter in the race once &mdash;
+          calibrated at roughly $0.02 per impression times a ~250,000-voter median House district. So
+          <code>P_dollars</code> is a real cost in dollars, not just an index: at the defaults, it runs from
+          under $20,000 in the cheapest races to well over $100,000 in the most expensive ones.</p>
+        <p><strong>Electorate size (Nrel).</strong> A dollar doesn't buy a fixed head count of persuaded
+          voters, it buys a fixed <em>fraction</em> of a pass &mdash; the same theta/reach-priced share of the
+          race's electorate regardless of that electorate's size. But that fraction of a bigger electorate
+          reaches more actual people, so <code>raw</code> is scaled up by <code>Nrel</code>, the race's
+          electorate size relative to the median House district. Net effect: electorate size cancels out of
+          the seat term rather than mechanically favoring small districts, which is what would happen if a
+          dollar instead bought a fixed number of persuaded voters.</p>
+        <p><strong>Diminishing returns, with a head start instead of a floor.</strong> A campaign that already
+          has a lot of money gets less marginal benefit from one more dollar than a campaign still building
+          out its operation. <code>passes&nbsp;=&nbsp;money&nbsp;/&nbsp;P_dollars</code> is how many of these
+          full-race impression passes the chosen money figure buys. Rather than a flat dollar floor on money,
+          every race is given a "Head start" of <code>prior_reach</code> passes &mdash; equivalent exposure
+          from party committees, outside spending and earned media that exists before any donation arrives, and
+          which (because it's denominated in passes, not dollars) automatically scales with how expensive the
+          race is to reach. The marginal value of one more dollar is then
+          <code>(prior_reach&nbsp;+&nbsp;passes)<sup>&minus;eta</sup>&nbsp;/&nbsp;P_dollars</code> &mdash; the
+          derivative, with respect to dollars, of a CRRA utility curve over total passes. It converges to the
+          old <code>money<sup>&minus;eta</sup></code>&middot;<code>P<sup>eta&minus;1</sup></code> shape once
+          <code>passes</code> is large relative to <code>prior_reach</code>, but stays finite as money
+          approaches $0 instead of relying on an arbitrary floor. Default eta&nbsp;=&nbsp;0.6667 sits within the
+          uncertainty of Jacobson (1990)'s Box-Cox estimate that challenger House spending is concave with
+          lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04), i.e. eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72.</p>
         <p><strong>Putting it together.</strong></p>
         <ul>
-          <li><code>raw = V &times; money<sup>&minus;eta</sup> &times; P_eff<sup>eta&minus;1</sup></code></li>
-          <li><code>impact = 100 &times; raw / max(raw)</code>, where the max is taken over every race currently
-            shown by the chamber and search filters, across every page &mdash; so the top race is always
-            100.0 regardless of which page it falls on.</li>
+          <li><code>raw&nbsp;=&nbsp;V&nbsp;&times;&nbsp;el&nbsp;&times;&nbsp;Nrel&nbsp;&times;&nbsp;(prior_reach&nbsp;+&nbsp;passes)<sup>&minus;eta</sup>&nbsp;/&nbsp;P_dollars</code>,
+            where <code>el</code> is Silver's elasticity estimate for the race, entering here a second time as
+            an ease-of-persuasion multiplier (it already widens the margin distribution used inside
+            <code>a</code>, above).</li>
+          <li><code>impact&nbsp;=&nbsp;100&nbsp;&times;&nbsp;raw&nbsp;/&nbsp;mean(raw)</code>, where the mean is
+            taken over every race on the board &mdash; scored or not, shown by the current filters or not
+            &mdash; so the <em>average</em> race scores 100, not the top one, and a race's score doesn't move
+            just because you filtered the table down to a smaller set.</li>
         </ul>
         <p>Races the model cannot score at all (no defined tipping-point probability) show an em dash instead
-          of a number, sort to the bottom, and are excluded from that normalization &mdash; see the note below
-          the table. This is a simplified, illustrative model built on public forecast and campaign-finance
-          data. It is not investment or campaign advice, and no part of it should be read as a prediction of
-          any individual race's outcome.</p>
+          of a number and sort to the bottom of the table. They still count toward the denominator above (as
+          does every race excluded from the board entirely &mdash; see the note below the table) with a raw
+          score of zero, so they can't inflate other races' scores by shrinking the average. This is a
+          simplified, illustrative model built on public forecast and campaign-finance data. It is not
+          investment or campaign advice, and no part of it should be read as a prediction of any individual
+          race's outcome.</p>
       </div>
     </details>
   </section>
@@ -795,18 +844,17 @@
   "use strict";
 
   var DEFAULTS = {
-    eta: 0.72,
+    eta: 0.6667,
     c_house: 25.0,
-    senate_mult: 0.75,
+    senate_mult: 0.80,
     sen_val: 13.05,
     theta: 0.40,
+    prior_reach: 60.0,
     money: "proj"
   };
-  var MONEY_FLOOR = 1000000; // overwritten from meta.money_floor once data loads
-  var TOP_WHY_N = 25; // "Why" chips only shown for this many top-ranked races overall
 
   var ALL_RACES = [];
-  var META = {};
+  var META = {}; // meta.anchor, meta.k_dollars_per_reach, meta.total_races drive scoring below
   var state = {
     chamber: "all",
     search: "",
@@ -849,6 +897,11 @@
     return (p * 100).toFixed(1) + "%";
   }
 
+  function fmtInt(v){
+    if (v == null || isNaN(v)) return DASH;
+    return Math.round(v).toLocaleString("en-US");
+  }
+
   function readParams(){
     return {
       eta: parseFloat(els.eta.value),
@@ -856,20 +909,24 @@
       senate_mult: parseFloat(els.senate_mult.value),
       sen_val: parseFloat(els.sen_val.value),
       theta: parseFloat(els.theta.value),
+      prior_reach: parseFloat(els.prior_reach.value),
       money: (document.querySelector('input[name="money"]:checked') || {}).value || "proj"
     };
   }
 
-  // Scoring per race (races with calc === false get no score at all — see below):
-  //   c_eff = senate_mult * c_house if Senate else c_house
-  //   w     = sen_val if Senate else 1
-  //   V     = c_eff*b + w*a
-  //   money = max(chosen money field, MONEY_FLOOR)
-  //   P_eff = theta*1.0 + (1-theta)*reach
-  //   raw   = V * money^(-eta) * P_eff^(eta-1)
-  // impact is a separate normalization pass over the currently-filtered set
-  // (every page of it, not just the visible one) — see render().
-  function computeRow(r, p){
+  // Scoring per race (races with calc === false get no score at all — see below).
+  // anchor/K are dataset-level constants from meta, independent of the sliders;
+  // everything else comes from the current parameter set p:
+  //   c_eff     = senate_mult * c_house if Senate else c_house
+  //   w         = sen_val if Senate else 1
+  //   V         = c_eff*b + w*a
+  //   P_dollars = (theta*anchor + (1-theta)*reach) * K
+  //   passes    = money / P_dollars                         (no floor — can be 0)
+  //   raw       = V * el * Nrel * (prior_reach + passes)^-eta / P_dollars
+  // `impact` (100 * raw / mean_raw) is a separate normalization pass computed
+  // in render() over the FULL race set, not just the filtered/paged subset —
+  // see the comment there for why.
+  function computeRow(r, p, anchor, K){
     var isSen = r.ch === "S";
     var calc = !!r.calc;
     var M;
@@ -877,25 +934,28 @@
     else if (p.money === "coh") M = r.coh;
     else M = r.proj;
     if (M == null || isNaN(M)) M = 0;
-    var money = Math.max(M, MONEY_FLOOR);
 
     var row = {
       race: r.race, ch: r.ch, name: r.name, party: r.party, rating: r.rating,
       p: r.p, margin: r.margin, match: r.match, cov: r.cov,
       why: r.why || [], calc: calc,
       reach: calc ? r.reach : null,
-      moneyDefRaw: M, moneyUsed: money,
-      raw: 0, impact: null, rank: null, top: false
+      moneyDefRaw: M, moneyUsed: M,
+      pDollars: null, passes: null,
+      raw: 0, impact: null, impactInt: null, rank: null
     };
 
     if (calc) {
       var c_eff = isSen ? p.c_house * p.senate_mult : p.c_house;
       var w = isSen ? p.sen_val : 1;
       var V = c_eff * r.b + w * r.a;
-      var P_eff = p.theta * 1.0 + (1 - p.theta) * r.reach;
-      var raw = V * Math.pow(money, -p.eta) * Math.pow(P_eff, p.eta - 1);
+      var P_dollars = (p.theta * anchor + (1 - p.theta) * r.reach) * K;
+      var passes = M / P_dollars;
+      var raw = V * r.el * r.Nrel * Math.pow(p.prior_reach + passes, -p.eta) / P_dollars;
       if (!isFinite(raw) || raw < 0) raw = 0;
       row.raw = raw;
+      row.pDollars = P_dollars;
+      row.passes = passes;
     }
     return row;
   }
@@ -916,15 +976,17 @@
     if (a.calc !== b.calc) return a.calc ? -1 : 1;
     var av, bv;
     switch(key){
-      case "impact": av = a.calc ? a.impact : 0; bv = b.calc ? b.impact : 0; break;
+      case "impact": av = a.calc ? a.impactInt : 0; bv = b.calc ? b.impactInt : 0; break;
       case "race": av = a.race; bv = b.race; break;
       case "name": av = a.name; bv = b.name; break;
       case "ch": av = a.ch; bv = b.ch; break;
       case "rating": av = a.rating || ""; bv = b.rating || ""; break;
       case "p": av = a.p; bv = b.p; break;
       case "reach": av = a.calc ? a.reach : 0; bv = b.calc ? b.reach : 0; break;
+      case "pDollars": av = a.calc ? a.pDollars : 0; bv = b.calc ? b.pDollars : 0; break;
+      case "passes": av = a.calc ? a.passes : 0; bv = b.calc ? b.passes : 0; break;
       case "money": av = a.moneyUsed; bv = b.moneyUsed; break;
-      default: av = a.calc ? a.impact : 0; bv = b.calc ? b.impact : 0;
+      default: av = a.calc ? a.impactInt : 0; bv = b.calc ? b.impactInt : 0;
     }
     if (typeof av === "string" || typeof bv === "string") {
       av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
@@ -934,27 +996,25 @@
     return dir * (av - bv);
   }
 
-  // Rank (and which rows get "Why" chips) is computed once over the FULL
-  // filtered set, independent of whichever column the table is currently
-  // sorted/displayed by, and independent of pagination. Competition ranking
-  // on the displayed (1-decimal-rounded) impact value: ties share a rank and
-  // the next distinct value skips ahead (1, 2, 2, 4, ...). calc === false
-  // rows get rank = null (rendered as "—") and never get Why chips.
+  // Rank is computed once over the FULL filtered set, independent of
+  // whichever column the table is currently sorted/displayed by, and
+  // independent of pagination. Competition ranking on the displayed
+  // (rounded-to-integer) impact value: ties share a rank and the next
+  // distinct value skips ahead (1, 2, 2, 4, ...). calc === false rows get
+  // rank = null (rendered as "—").
   function assignRanksAndWhy(rows){
     var calcRows = rows.filter(function(r){ return r.calc; });
     calcRows.sort(function(a, b){
-      if (b.impact !== a.impact) return b.impact - a.impact;
+      if (b.impactInt !== a.impactInt) return b.impactInt - a.impactInt;
       return a.race < b.race ? -1 : (a.race > b.race ? 1 : 0); // deterministic tiebreak
     });
-    var rank = 0, lastRounded = null;
+    var rank = 0, last = null;
     calcRows.forEach(function(r, i){
-      var rounded = r.impact.toFixed(1);
-      if (lastRounded === null || rounded !== lastRounded) {
+      if (last === null || r.impactInt !== last) {
         rank = i + 1;
-        lastRounded = rounded;
+        last = r.impactInt;
       }
       r.rank = rank;
-      r.top = rank <= TOP_WHY_N;
     });
   }
 
@@ -966,21 +1026,29 @@
 
   function render(){
     var p = readParams();
+    var anchor = META.anchor, K = META.k_dollars_per_reach, totalRaces = META.total_races;
 
-    var computed = ALL_RACES.map(function(r){ return computeRow(r, p); });
-    var filtered = computed.filter(matchesFilter);
-
-    // Normalize to 100 over the WHOLE filtered set (every page), calc===true
-    // rows only — calc===false rows get no impact score at all.
-    var maxRaw = 0;
-    for (var i = 0; i < filtered.length; i++) {
-      if (filtered[i].calc && filtered[i].raw > maxRaw) maxRaw = filtered[i].raw;
-    }
-    filtered.forEach(function(r){
-      if (r.calc) r.impact = maxRaw > 0 ? (100 * r.raw / maxRaw) : 0;
+    // Score EVERY race on the board first, regardless of the chamber/search
+    // filters — impact is normalized against the mean raw score over the
+    // full race set (mean_raw = sum(raw) / total_races, where total_races
+    // also counts races excluded from the dataset entirely and calc===false
+    // races contribute 0 to the sum) so a race's score stays put when the
+    // user filters or searches; only ranking/pagination happen on the
+    // filtered subset.
+    var computed = ALL_RACES.map(function(r){ return computeRow(r, p, anchor, K); });
+    var rawSum = 0;
+    for (var i = 0; i < computed.length; i++) rawSum += computed[i].raw;
+    var meanRaw = totalRaces > 0 ? rawSum / totalRaces : 0;
+    computed.forEach(function(r){
+      if (r.calc) {
+        r.impact = meanRaw > 0 ? (100 * r.raw / meanRaw) : 0;
+        r.impactInt = Math.round(r.impact);
+      }
     });
 
-    // Rank + "Why" eligibility, over the full filtered set, before pagination.
+    var filtered = computed.filter(matchesFilter);
+
+    // Rank, over the full filtered set, before pagination.
     assignRanksAndWhy(filtered);
 
     filtered.sort(function(a, b){ return compareRows(a, b, state.sortKey, state.sortDir); });
@@ -998,21 +1066,19 @@
     var moneyLabel = p.money === "receipts" ? "total receipts"
                     : p.money === "coh" ? "cash on hand"
                     : "cash on hand + projected contributions";
-    var floorLabel = fmtMoney(MONEY_FLOOR);
 
     var html = pageRows.map(function(r){
       var warn = "";
       if (r.match === "none" || r.match === "top$") {
         warn = '<span class="marker warn" title="The FEC money figure for this candidate could not be confidently matched (match: ' +
-          escapeHtml(r.match) + '); a floor value may be in use.">&#9888;</span>';
+          escapeHtml(r.match) + ').">&#9888;</span>';
       }
       var ak = "";
       if (r.race.indexOf("AK") === 0) {
         ak = '<span class="marker rcv" title="Alaska uses ranked-choice voting; the two-candidate margin model here is approximate.">RCV</span>';
       }
       var covNote = r.cov ? (" (as of " + escapeHtml(r.cov) + ")") : "";
-      var moneyTitle = "Raw " + moneyLabel + ": " + fmtMoney(r.moneyDefRaw) + covNote +
-        ". Floored at " + floorLabel + " for the model.";
+      var moneyTitle = "Raw " + moneyLabel + ": " + fmtMoney(r.moneyDefRaw) + covNote + ".";
       // Real em dash character for a missing rating — never the "&mdash;" entity
       // string (that would get HTML-escaped into literal "&mdash;" text).
       var ratingText = escapeHtml(r.rating) || DASH;
@@ -1030,13 +1096,15 @@
       } else {
         var impactPct = Math.max(0, Math.min(100, r.impact));
         impactCell = '<div class="impact-cell"><div class="impact-bar" style="width:' + impactPct + '%"></div>' +
-          '<span class="impact-val">' + r.impact.toFixed(1) + '</span></div>';
+          '<span class="impact-val">' + r.impactInt + '</span></div>';
       }
 
       var reachText = r.calc ? r.reach.toFixed(1) : DASH;
+      var pDollarsText = r.calc ? fmtMoney(r.pDollars) : DASH;
+      var passesText = r.calc ? fmtInt(r.passes) : DASH;
 
       var whyCell = "";
-      if (r.calc && r.top && r.why && r.why.length) {
+      if (r.why && r.why.length) {
         whyCell = '<div class="why-chips">' + r.why.map(function(w){
           return '<span class="chip">' + escapeHtml(w) + '</span>';
         }).join("") + '</div>';
@@ -1052,6 +1120,8 @@
         '<td>' + ratingText + '</td>' +
         '<td class="num">' + pCell + '</td>' +
         '<td class="num">' + reachText + '</td>' +
+        '<td class="num" title="Dollar cost of one full impression pass into this race">' + pDollarsText + '</td>' +
+        '<td class="num" title="Impression passes the chosen money figure buys, before the head-start bonus">' + passesText + '</td>' +
         '<td class="num" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
         '<td class="why-td">' + whyCell + '</td>' +
         '<td><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
@@ -1099,10 +1169,11 @@
     $("senate_mult-val").textContent = parseFloat(els.senate_mult.value).toFixed(2);
     $("sen_val-val").textContent = parseFloat(els.sen_val.value).toFixed(2);
     $("theta-val").textContent = parseFloat(els.theta.value).toFixed(2);
+    $("prior_reach-val").textContent = String(Math.round(parseFloat(els.prior_reach.value)));
   }
 
   function attachEvents(){
-    ["eta", "c_house", "senate_mult", "sen_val", "theta"].forEach(function(id){
+    ["eta", "c_house", "senate_mult", "sen_val", "theta", "prior_reach"].forEach(function(id){
       els[id].addEventListener("input", function(){
         updateValueLabels();
         resetPageAndRender();
@@ -1157,6 +1228,7 @@
       els.senate_mult.value = DEFAULTS.senate_mult;
       els.sen_val.value = DEFAULTS.sen_val;
       els.theta.value = DEFAULTS.theta;
+      els.prior_reach.value = DEFAULTS.prior_reach;
       document.querySelector('input[name="money"][value="' + DEFAULTS.money + '"]').checked = true;
       updateValueLabels();
       resetPageAndRender();
@@ -1188,17 +1260,17 @@
   function init(data){
     ALL_RACES = data.races || [];
     META = data.meta || {};
-    if (META.money_floor != null && !isNaN(META.money_floor)) {
-      MONEY_FLOOR = META.money_floor;
-    }
     $("forecast-date").textContent = META.forecast_date || "unknown";
     renderExclusionNote(META);
+    var kEl = $("k-dollars");
+    if (kEl && META.k_dollars_per_reach != null) kEl.textContent = fmtMoney(META.k_dollars_per_reach);
 
     els.eta = $("eta");
     els.c_house = $("c_house");
     els.senate_mult = $("senate_mult");
     els.sen_val = $("sen_val");
     els.theta = $("theta");
+    els.prior_reach = $("prior_reach");
 
     $("per-page-select").value = String(state.perPage);
 
