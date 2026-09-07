@@ -535,10 +535,10 @@ def build_fec_indexes(api_key):
             race = race_code_from_fec(office, state, district)
             receipts = float(fec_field(rec, "receipts", default=0) or 0)
             coh = float(fec_field(rec, "cash_on_hand_end_period", "last_cash_on_hand_end_period", default=0) or 0)
-           cov = fec_field(rec, "coverage_end_date", "last_report_date", default="") or ""
+            cov = fec_field(rec, "coverage_end_date", "last_report_date", default="") or ""
             cov = str(cov)[:10]  # YYYY-MM-DD if present
             name = fec_field(rec, "name", "candidate_name", default="") or ""
-            party = fec_field(rec, "party", "party_full", default="") or """
+            party = fec_field(rec, "party", "party_full", default="") or ""
             cand = dict(
                 receipts=receipts, coh=coh, cov=cov,
                 last_name_norm=norm_last_name(fec_last_name(name)),
