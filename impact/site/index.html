@@ -870,10 +870,10 @@
           <div class="control-widget">
             <label for="c_house">House control weight <span class="val" id="c_house-val">40.0</span></label>
             <div class="slider-box">
-              <input type="range" id="c_house" min="0" max="100" step="0.5" value="40">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.40)" title="default 40"></div>
+              <input type="range" id="c_house" min="0" max="150" step="0.5" value="40">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.26667)" title="default 40"></div>
             </div>
-            <div class="range-labels"><span>0</span><span>100</span></div>
+            <div class="range-labels"><span>0</span><span>150</span></div>
           </div>
           <div class="control-def">
             <span class="term">What this is</span>
@@ -1053,8 +1053,8 @@
           already has a lot of money gets less marginal benefit from one more dollar than a campaign still
           building out its operation. <code>passes&nbsp;=&nbsp;money_eff&nbsp;/&nbsp;P_dollars</code> is how
           many of these full-race impression passes the campaign's effective money buys. Rather than a flat
-          dollar floor on money, every campaign is treated as already having reached its electorate several
-          times over (<code>prior_reach&nbsp;=&nbsp;10</code>) before any donation arrives &mdash; standing in
+          dollar floor on money, every campaign is treated as already having reached its electorate many
+          times over (<code>prior_reach&nbsp;=&nbsp;30</code>) before any donation arrives &mdash; standing in
           for the reach a campaign gets for free, from its ballot party label, earned media, existing name
           recognition, and party infrastructure, and also keeping the first dollar's value finite. It is a
           judgment call with no rigorous empirical grounding, which is why it is fixed rather than a slider
