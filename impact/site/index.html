@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2026 Marginal Impact Ranker</title>
+<title>2026 Impact Ranker</title>
 <style>
   :root{
     --bg:#faf9f6;
@@ -163,18 +163,74 @@
   }
   #count-note{color:var(--muted);font-size:.82rem;}
 
+  /* ---------- expanded/extra columns toggle ---------- */
+  .col-extra{display:none;}
+  #races-table.show-extra .col-extra{display:table-cell;}
+  .table-toolbar{
+    display:flex;
+    justify-content:flex-end;
+    margin-bottom:8px;
+  }
+  .table-toolbar-bottom{
+    margin-top:10px;
+    margin-bottom:0;
+  }
+  .toggle-extra-btn{
+    background:var(--card-2);
+    color:var(--fg);
+    border:1px solid var(--border);
+    border-radius:7px;
+    padding:7px 14px;
+    font-size:.82rem;
+    cursor:pointer;
+  }
+  .toggle-extra-btn:hover{background:var(--row-hover);}
+
   /* ---------- table ---------- */
   .table-wrap{
+    position:relative;
     overflow-x:auto;
     border:1px solid var(--border);
     border-radius:10px;
     background:var(--card);
     box-shadow:var(--shadow);
+    scrollbar-width:thin;                 /* Firefox */
+    scrollbar-color:var(--muted-2) transparent;
   }
+  .table-wrap::-webkit-scrollbar{height:10px;}
+  .table-wrap::-webkit-scrollbar-thumb{background:var(--muted-2);border-radius:6px;}
+  .table-wrap::-webkit-scrollbar-track{background:transparent;}
+  .table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+  /* Right/left scroll affordance: a gradient fade pinned to the visible edge
+     of the wrapper (these pseudo-elements are absolutely positioned against
+     .table-wrap's own box, so — unlike normal-flow content — they do not
+     travel with the horizontal scroll of the table inside it). Toggled via
+     .has-more-right/.has-more-left, kept in sync with scrollLeft from JS. */
+  .table-wrap::before,
+  .table-wrap::after{
+    content:"";
+    position:absolute;
+    top:0;bottom:0;
+    width:28px;
+    z-index:1;
+    pointer-events:none;
+    opacity:0;
+    transition:opacity .15s ease;
+  }
+  .table-wrap::after{
+    right:0;
+    background:linear-gradient(to right, transparent, var(--card));
+  }
+  .table-wrap::before{
+    left:0;
+    background:linear-gradient(to left, transparent, var(--card));
+  }
+  .table-wrap.has-more-right::after{opacity:1;}
+  .table-wrap.has-more-left::before{opacity:1;}
   table{
     border-collapse:collapse;
     width:100%;
-    min-width:1140px;
+    min-width:940px;
     font-size:.87rem;
   }
   thead th{
@@ -182,7 +238,7 @@
     top:0;
     background:var(--card-2);
     text-align:left;
-    padding:10px 12px;
+    padding:8px 9px;
     border-bottom:1px solid var(--border);
     white-space:nowrap;
     font-size:.72rem;
@@ -197,7 +253,7 @@
   th .arrow{display:inline-block;width:.9em;color:var(--accent);}
   th.num,td.num{text-align:right;}
   tbody td{
-    padding:8px 12px;
+    padding:8px 9px;
     border-bottom:1px solid var(--border);
     white-space:nowrap;
   }
@@ -483,7 +539,7 @@
   }
 
   /* ---------- why chips ---------- */
-  td.why-td{white-space:normal;max-width:230px;min-width:150px;}
+  td.why-td{white-space:normal;max-width:230px;min-width:110px;}
   .why-chips{display:flex;flex-wrap:wrap;gap:4px;}
   .chip{
     display:inline-block;
@@ -517,6 +573,9 @@
     margin-bottom:16px;
   }
 
+  /* ---------- controls accordion (mobile only; forced open on desktop via JS) ---------- */
+  details.controls-acc summary{display:none;}
+
   @media (max-width:720px){
     .control{grid-template-columns:1fr;}
     .masthead h1{font-size:1.9rem;}
@@ -524,6 +583,134 @@
   }
   @media (max-width:640px){
     .masthead h1{font-size:1.6rem;}
+
+    /* ---- larger tap targets, stacked filters ---- */
+    .filters-card{flex-direction:column;align-items:stretch;gap:12px;}
+    .filters-left{flex-direction:column;align-items:stretch;gap:12px;}
+    .chamber-filter{justify-content:space-between;}
+    .chamber-filter label{min-height:44px;padding:4px 2px;}
+    #search-box{width:100%;min-height:44px;box-sizing:border-box;}
+    .per-page select{min-height:44px;}
+    .page-buttons button{min-height:44px;padding:8px 16px;}
+    #reset-btn{min-height:44px;}
+    .toggle-extra-btn{min-height:44px;padding:8px 16px;}
+
+    /* ---- parameter controls become a closed-by-default accordion ---- */
+    details.controls-acc summary{
+      display:block;
+      cursor:pointer;
+      font-weight:700;
+      font-family:var(--serif);
+      font-size:1.05rem;
+      padding:10px 0;
+      border-top:1px solid var(--border);
+      margin-top:6px;
+      list-style:none;
+    }
+    details.controls-acc summary::-webkit-details-marker{display:none;}
+    details.controls-acc summary::before{content:"▸ ";color:var(--accent);}
+    details.controls-acc[open] summary::before{content:"▾ ";}
+
+    /* ---- table reflows into one card per race ---- */
+    .table-wrap{
+      overflow-x:hidden;
+      border:none;
+      background:transparent;
+      box-shadow:none;
+    }
+    .table-wrap::before,.table-wrap::after{display:none;}
+    table{min-width:0;width:100%;}
+    thead{
+      /* visually hidden but still available to assistive tech, since each
+         td now carries its own data-label */
+      position:absolute;
+      width:1px;height:1px;
+      margin:-1px;padding:0;
+      overflow:hidden;
+      clip:rect(0,0,0,0);
+      white-space:nowrap;
+      border:0;
+    }
+    tbody,tr,td{display:block;width:100%;}
+    tbody tr{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:12px;
+      box-shadow:var(--shadow);
+      padding:14px;
+      margin-bottom:12px;
+    }
+    tbody tr:hover{background:var(--card);}
+    td{
+      border-bottom:none;
+      padding:4px 0;
+      white-space:normal;
+    }
+    td[data-label]::before{
+      content:attr(data-label);
+      display:block;
+      font-size:.66rem;
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:var(--muted-2);
+      margin-bottom:2px;
+    }
+
+    /* impact: large hero number, no separate label */
+    td.impact-td{padding:0 0 10px;min-width:0;}
+    td.impact-td::before{display:none;}
+    td.impact-td .impact-cell{height:auto;background:none;}
+    td.impact-td .impact-bar{display:none;}
+    td.impact-td .impact-val{
+      position:static;width:auto;text-align:left;padding:0;
+      font-size:2rem;font-weight:700;
+    }
+
+    /* race code + candidate name read together as the card heading */
+    td.race-td{display:inline;font-family:var(--serif);font-weight:700;font-size:1.1rem;}
+    td.race-td::before{display:none;}
+    td.candidate-td{display:inline;font-size:1.05rem;color:var(--fg);padding:0 0 10px;}
+    td.candidate-td::before{
+      content:" · ";
+      display:inline;
+      color:var(--muted-2);
+      font-weight:400;
+      text-transform:none;
+      letter-spacing:0;
+      margin:0;
+    }
+
+    /* chamber / rating / dem win% as small labelled meta lines */
+    td.chamber-td,td.rating-td,td.pwin-td{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:6px 0;
+      border-top:1px solid var(--border);
+      font-size:.85rem;
+    }
+    td.chamber-td::before,td.rating-td::before,td.pwin-td::before{
+      display:inline;margin:0;
+    }
+
+    td.why-td{padding:10px 0 4px;}
+
+    td.donate-td{padding:10px 0 0;}
+    td.donate-td::before{display:none;}
+    td.donate-td .donate-btn{
+      display:block;width:100%;text-align:center;box-sizing:border-box;
+      padding:12px;font-size:.95rem;
+    }
+
+    /* extra columns, revealed by the same toggle, as additional lines */
+    td.col-extra{
+      border-top:1px dashed var(--border);
+      padding:6px 0;
+      font-size:.85rem;
+    }
+    #races-table.show-extra .col-extra{display:block;}
   }
 </style>
 </head>
@@ -531,16 +718,17 @@
 <div class="wrap">
 
   <header class="masthead">
-    <h1>2026 Marginal Impact Ranker</h1>
+    <h1>2026 Impact Ranker</h1>
     <p class="standfirst">Which competitive U.S. House and Senate races give a Democratic donor the most impact per dollar — right now.</p>
     <p class="lede">
-      <strong>Impact</strong> is a marginal-impact-per-dollar score: how much one more dollar to a given
-      race is expected to move the chance of flipping that seat and the chance that seat flips control of its
-      chamber, discounted for how expensive it is to reach voters there and for how much money the campaign
-      already has. Scores are scaled so the average race across the whole map is 1.00, which means a race
-      scoring 5.00 is expected to do about five times as much per dollar as the average race — and that
-      average is fixed across the full race set, so scores don't shift just because you filter or search.
-      Adjust the assumptions below — the whole table recalculates live, nothing reloads.
+      Impact here is how much the next dollar donated is expected to move the chance of flipping that seat and
+      its chamber, compared to donating that dollar to a randomly chosen Democratic nominee for Congress in 2026
+      (i.e. the average). So 10x means your dollar goes 10x as far as a donation to the average Democratic
+      candidate this year.
+    </p>
+    <p class="lede">
+      Like all models, this one is based on assumptions. If you disagree with my assumptions, adjust the sliders
+      below to see how the results change under different ones.
     </p>
   </header>
 
@@ -561,24 +749,26 @@
   </section>
 
   <section class="table-section">
-    <div class="table-wrap">
+    <div class="table-toolbar">
+      <button type="button" class="toggle-extra-btn" id="toggle-extra-top" aria-expanded="false" aria-controls="races-table">See expanded columns</button>
+    </div>
+
+    <div class="table-wrap" id="table-wrap" tabindex="0" role="region" aria-label="Race table, scrollable horizontally">
       <table id="races-table">
         <thead>
           <tr>
-            <th>#</th>
             <th class="sortable num" data-key="impact">Impact <span class="arrow"></span></th>
             <th class="sortable" data-key="race">Race <span class="arrow"></span></th>
             <th class="sortable" data-key="name">Candidate <span class="arrow"></span></th>
             <th class="sortable" data-key="ch">Chamber <span class="arrow"></span></th>
             <th class="sortable" data-key="rating">Rating <span class="arrow"></span></th>
             <th class="sortable num" data-key="p">Dem win % <span class="arrow"></span></th>
-            <th class="sortable num" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
-            <th class="sortable num" data-key="pDollars" title="Dollar cost of one full impression pass into this race (theta-blended with the board's anchor cost)">Pass cost <span class="arrow"></span></th>
-            <th class="sortable num" data-key="passes" title="Impression passes the campaign's effective money (its chosen money figure plus discounted outside spending) buys">Passes <span class="arrow"></span></th>
-            <th class="sortable num" data-key="money">Money used <span class="arrow"></span></th>
-            <th class="sortable num" data-key="outside" title="Party-committee and super-PAC spending helping this candidate, before the outside-money discount">Outside $ <span class="arrow"></span></th>
             <th title="Rule-based tags summarizing why this race is notable">Why</th>
             <th>Donate</th>
+            <th class="col-extra">Rank</th>
+            <th class="sortable num col-extra" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
+            <th class="sortable num col-extra" data-key="money">Money used <span class="arrow"></span></th>
+            <th class="sortable num col-extra" data-key="outside" title="Party-committee and super-PAC spending helping this candidate, before the outside-money discount">Outside $ <span class="arrow"></span></th>
           </tr>
         </thead>
         <tbody id="races-tbody"></tbody>
@@ -601,6 +791,10 @@
       </div>
     </div>
 
+    <div class="table-toolbar table-toolbar-bottom">
+      <button type="button" class="toggle-extra-btn" id="toggle-extra-bottom" aria-expanded="false" aria-controls="races-table">See expanded columns</button>
+    </div>
+
     <p class="exclusion-note" id="exclusion-note"></p>
     <p class="exclusion-note" id="override-note" hidden></p>
   </section>
@@ -615,6 +809,8 @@
         <button type="button" id="reset-btn">Reset to defaults</button>
       </div>
 
+      <details class="controls-acc" id="controls-acc">
+      <summary>Show parameter controls</summary>
       <div class="control-list">
 
         <div class="control">
@@ -761,6 +957,7 @@
         </div>
 
       </div>
+      </details>
     </div>
   </section>
 
@@ -1025,8 +1222,6 @@
       case "rating": av = a.rating || ""; bv = b.rating || ""; break;
       case "p": av = a.p; bv = b.p; break;
       case "reach": av = a.calc ? a.reach : 0; bv = b.calc ? b.reach : 0; break;
-      case "pDollars": av = a.calc ? a.pDollars : 0; bv = b.calc ? b.pDollars : 0; break;
-      case "passes": av = a.calc ? a.passes : 0; bv = b.calc ? b.passes : 0; break;
       case "money": av = a.moneyUsed; bv = b.moneyUsed; break;
       case "outside": av = a.outsideTotal || 0; bv = b.outsideTotal || 0; break;
       default: av = a.calc ? a.impact2 : 0; bv = b.calc ? b.impact2 : 0;
@@ -1130,7 +1325,16 @@
           '">&dagger;</sup>';
       }
       var covNote = r.cov ? (" (as of " + escapeHtml(r.cov) + ")") : "";
-      var moneyTitle = "Raw " + moneyLabel + ": " + fmtMoney(r.moneyDefRaw) + covNote + ".";
+      var moneyLabelCap = moneyLabel.charAt(0).toUpperCase() + moneyLabel.slice(1);
+      var moneyTitle = moneyLabelCap + ": " + fmtMoney(r.moneyDefRaw) + covNote + ".";
+      if (r.outsideTotal && r.outsideTotal > 0) {
+        moneyTitle += " Outside spending " + fmtMoney(r.outsideTotal) + " counted at " +
+          Math.round(p.outside_mult * 100) + "%.";
+      }
+      if (r.calc) {
+        moneyTitle += " One full pass over this electorate costs " + fmtMoney(r.pDollars) +
+          "; this campaign can buy about " + fmtInt(r.passes) + " passes.";
+      }
       // Real em dash character for a missing rating — never the "&mdash;" entity
       // string (that would get HTML-escaped into literal "&mdash;" text).
       var ratingText = escapeHtml(r.rating) || DASH;
@@ -1151,13 +1355,13 @@
         // average shows a full bar, same relationship the old 0-100 scale
         // had at its cap of 100.
         var impactPct = Math.max(0, Math.min(100, r.impact * 100));
+        // The "x" suffix is a display-only affordance — never applied to
+        // r.impact2 itself, which still drives the comparator and ranking.
         impactCell = '<div class="impact-cell"><div class="impact-bar" style="width:' + impactPct + '%"></div>' +
-          '<span class="impact-val">' + r.impact2.toFixed(2) + '</span></div>';
+          '<span class="impact-val">' + r.impact2.toFixed(2) + 'x</span></div>';
       }
 
       var reachText = r.calc ? r.reach.toFixed(1) : DASH;
-      var pDollarsText = r.calc ? fmtMoney(r.pDollars) : DASH;
-      var passesText = r.calc ? fmtInt(r.passes) : DASH;
       var outsideText = (r.outsideTotal && r.outsideTotal > 0) ? fmtMoney(r.outsideTotal) : DASH;
 
       var whyCell = "";
@@ -1167,22 +1371,25 @@
         }).join("") + '</div>';
       }
 
+      // Cell order below matches the <thead> order exactly: the 8
+      // default-visible columns first (Impact..Donate), then the 4
+      // .col-extra columns (Rank, Reach cost, Money used, Outside $),
+      // hidden unless #races-table has .show-extra. Every <td> carries
+      // data-label so the mobile card layout can print it via ::before.
       return (
         '<tr>' +
-        '<td class="rank-cell">' + rankText + '</td>' +
-        '<td class="num impact-td">' + impactCell + '</td>' +
-        '<td>' + escapeHtml(r.race) + ak + '</td>' +
-        '<td>' + escapeHtml(r.name) + warn + overrideMark + '</td>' +
-        '<td><span class="pill' + (r.ch === "S" ? " senate" : "") + '">' + (r.ch === "S" ? "Senate" : "House") + '</span></td>' +
-        '<td>' + ratingText + '</td>' +
-        '<td class="num">' + pCell + '</td>' +
-        '<td class="num">' + reachText + '</td>' +
-        '<td class="num" title="Dollar cost of one full impression pass into this race">' + pDollarsText + '</td>' +
-        '<td class="num" title="Impression passes the campaign\'s effective money (its chosen money figure plus discounted outside spending) buys">' + passesText + '</td>' +
-        '<td class="num" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
-        '<td class="num" title="Party-committee and super-PAC spending helping this candidate, before the outside-money discount">' + outsideText + '</td>' +
-        '<td class="why-td">' + whyCell + '</td>' +
-        '<td><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
+        '<td class="num impact-td" data-label="Impact">' + impactCell + '</td>' +
+        '<td class="race-td" data-label="Race">' + escapeHtml(r.race) + ak + '</td>' +
+        '<td class="candidate-td" data-label="Candidate">' + escapeHtml(r.name) + warn + overrideMark + '</td>' +
+        '<td class="chamber-td" data-label="Chamber"><span class="pill' + (r.ch === "S" ? " senate" : "") + '">' + (r.ch === "S" ? "Senate" : "House") + '</span></td>' +
+        '<td class="rating-td" data-label="Rating">' + ratingText + '</td>' +
+        '<td class="num pwin-td" data-label="Dem win %">' + pCell + '</td>' +
+        '<td class="why-td" data-label="Why">' + whyCell + '</td>' +
+        '<td class="donate-td" data-label="Donate"><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
+        '<td class="rank-cell col-extra" data-label="Rank">' + rankText + '</td>' +
+        '<td class="num col-extra reach-td" data-label="Reach cost">' + reachText + '</td>' +
+        '<td class="num col-extra money-td" data-label="Money used" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
+        '<td class="num col-extra outside-td" data-label="Outside $" title="Party-committee and super-PAC spending helping this candidate, before the outside-money discount">' + outsideText + '</td>' +
         '</tr>'
       );
     }).join("");
@@ -1191,6 +1398,19 @@
     $("count-note").textContent = "Showing " + filtered.length + " of " + ALL_RACES.length + " races";
     updateSortIndicators();
     updatePagination(total, startIdx, endIdx);
+    updateScrollAffordance();
+  }
+
+  // Toggles .has-more-right/.has-more-left on the table wrapper so the CSS
+  // gradient-fade affordance only shows when there's actually more table to
+  // scroll to in that direction. Called after every render() (content width
+  // can change), on the wrapper's own scroll event, and on window resize.
+  function updateScrollAffordance(){
+    var wrap = els.tableWrap;
+    if (!wrap) return;
+    var maxScroll = wrap.scrollWidth - wrap.clientWidth;
+    wrap.classList.toggle("has-more-right", maxScroll > 1 && wrap.scrollLeft < maxScroll - 1);
+    wrap.classList.toggle("has-more-left", wrap.scrollLeft > 1);
   }
 
   function updatePagination(total, startIdx, endIdx){
@@ -1228,6 +1448,41 @@
     $("sen_val-val").textContent = parseFloat(els.sen_val.value).toFixed(2);
     $("theta-val").textContent = parseFloat(els.theta.value).toFixed(2);
     $("outside_mult-val").textContent = parseFloat(els.outside_mult.value).toFixed(2);
+  }
+
+  // Expanded-columns toggle: both the top and bottom button drive the same
+  // piece of state (the .show-extra class on the table itself), and both
+  // are kept in sync (label text + aria-expanded) on every toggle. No
+  // markup is rebuilt — the extra th/td already exist with class
+  // .col-extra and are hidden purely via CSS.
+  function setExtraColumnsVisible(visible){
+    var table = $("races-table");
+    if (!table) return;
+    table.classList.toggle("show-extra", visible);
+    var label = visible ? "Hide expanded columns" : "See expanded columns";
+    [els.toggleExtraTop, els.toggleExtraBottom].forEach(function(btn){
+      if (!btn) return;
+      btn.textContent = label;
+      btn.setAttribute("aria-expanded", visible ? "true" : "false");
+    });
+    // Revealing/hiding columns changes the table's scrollWidth on desktop.
+    updateScrollAffordance();
+  }
+
+  function toggleExtraColumns(){
+    var table = $("races-table");
+    var visible = !(table && table.classList.contains("show-extra"));
+    setExtraColumnsVisible(visible);
+  }
+
+  // The parameter controls live inside a <details> so they collapse into an
+  // accordion on mobile (closed by default — no "open" attribute in the
+  // markup). On desktop the summary is hidden by CSS and this keeps the
+  // element forced open, so it reads as a normal, always-expanded section.
+  function syncControlsAccordion(){
+    if (!els.controlsAcc) return;
+    var isDesktop = !window.matchMedia || window.matchMedia("(min-width: 641px)").matches;
+    if (isDesktop) els.controlsAcc.open = true;
   }
 
   function attachEvents(){
@@ -1278,6 +1533,16 @@
 
     $("next-btn").addEventListener("click", function(){
       if (state.page < state.totalPages) { state.page += 1; render(); }
+    });
+
+    if (els.tableWrap) {
+      els.tableWrap.addEventListener("scroll", updateScrollAffordance);
+    }
+    window.addEventListener("resize", updateScrollAffordance);
+    window.addEventListener("resize", syncControlsAccordion);
+
+    [els.toggleExtraTop, els.toggleExtraBottom].forEach(function(btn){
+      if (btn) btn.addEventListener("click", toggleExtraColumns);
     });
 
     $("reset-btn").addEventListener("click", function(){
@@ -1355,11 +1620,16 @@
     els.sen_val = $("sen_val");
     els.theta = $("theta");
     els.outside_mult = $("outside_mult");
+    els.tableWrap = $("table-wrap");
+    els.toggleExtraTop = $("toggle-extra-top");
+    els.toggleExtraBottom = $("toggle-extra-bottom");
+    els.controlsAcc = $("controls-acc");
 
     $("per-page-select").value = String(state.perPage);
 
     updateValueLabels();
     attachEvents();
+    syncControlsAccordion();
     render();
   }
 
