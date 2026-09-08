@@ -16,10 +16,10 @@ K_DOLLARS_PER_REACH = 5000.0
 # paying for it (ballot party label, earned media, existing name ID, party
 # infrastructure). It also keeps the marginal value of the first dollar
 # finite. It is a fudge factor with no rigorous empirical grounding, so it
-# is not exposed as a degree of freedom; 10 was chosen (2026-09-08, up from
-# 1.0) as a rough judgment call for that free reach, not a derived figure -
-# see the site's methodology section for the reasoning.
-PRIOR_REACH = 10.0
+# is not exposed as a degree of freedom; raised twice on 2026-09-08 (1.0 ->
+# 10.0 -> 30.0) as the owner's own judgment call for that free reach, not a
+# derived figure - see the site's methodology section for the reasoning.
+PRIOR_REACH = 30.0
 
 # Manual money overrides: race code -> hand-entered figures used instead of
 # the FEC match, for cases where FEC data is known to be wrong or missing
