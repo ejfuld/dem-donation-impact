@@ -778,7 +778,14 @@ def load_prev_data_json():
 # ---------------------------------------------------------------------------
 
 def main():
-    api_key = os.environ.get("FEC_API_KEY", "").strip() or "DEMO_KEY"
+    # Accept either secret name. api.data.gov issues one key that works across
+    # agencies, so the repo secret may reasonably be called either thing.
+    api_key = (os.environ.get("DATA_GOV_API_KEY", "").strip()
+               or os.environ.get("FEC_API_KEY", "").strip()
+               or "DEMO_KEY")
+    if api_key == "DEMO_KEY":
+        sys.stderr.write("WARNING: no DATA_GOV_API_KEY/FEC_API_KEY set; DEMO_KEY is capped at "
+                         "40 requests/hour and the per-state outside-money pull will fail.\n")
 
     # 1) Silver Bulletin forecast data. Load-bearing: fail loudly if this fails.
     try:
