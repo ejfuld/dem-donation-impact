@@ -7,72 +7,81 @@
 <style>
   :root{
     --bg:#faf9f6;
-    --fg:#1a1a18;
-    --muted:#6b6f70;
-    --muted-2:#8a8d8d;
+    --fg:#181c26;
+    --muted:#5c6472;
+    --muted-2:#7b8290;
     --card:#ffffff;
     --card-2:#f1efe8;
-    --border:#e3e0d7;
-    --accent:#1f7a6c;
+    --border:#dfe2e8;
+    --accent:#1d3f66;
     --accent-fg:#ffffff;
-    --accent-soft:rgba(31,122,108,.15);
-    --accent-soft-strong:rgba(31,122,108,.30);
-    --link:#1f6a5e;
-    --row-hover:#f1f4f1;
+    --accent-soft:rgba(29,63,102,.13);
+    --accent-soft-strong:rgba(29,63,102,.28);
+    /* Sparing second accent — a restrained brick crimson, used only for the
+       masthead's hairline rule and star motif. Everything else stays navy so
+       the "patriotic" note reads as one deliberate touch, not a theme. */
+    --accent2:#a3293f;
+    --accent2-soft:rgba(163,41,63,.14);
+    --link:#1c4f82;
+    --row-hover:#eef1f5;
     --warn:#8a5300;
     --warn-bg:#fbf0da;
-    --track:#e2dfd5;
-    --thumb:#1f7a6c;
-    --tick:#9c988c;
-    --code-bg:#eeece3;
+    --track:#dde1e6;
+    --thumb:#1d3f66;
+    --tick:#9096a0;
+    --code-bg:#eef0f2;
     --shadow: 0 1px 2px rgba(20,20,15,.05), 0 1px 1px rgba(20,20,15,.04);
     --serif: Iowan Old Style, "Palatino Linotype", Palatino, Georgia, Cambria, "Times New Roman", serif;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --bg:#111311;
-      --fg:#e9e8e2;
-      --muted:#a1a49f;
-      --muted-2:#84877f;
-      --card:#181b19;
-      --card-2:#1e2320;
-      --border:#2b302a;
-      --accent:#5fd0bb;
-      --accent-fg:#0c1210;
-      --accent-soft:rgba(95,208,187,.14);
-      --accent-soft-strong:rgba(95,208,187,.30);
-      --link:#7fdcc8;
-      --row-hover:#1d2320;
+      --bg:#10131c;
+      --fg:#e8eaf0;
+      --muted:#9aa3b2;
+      --muted-2:#7d8494;
+      --card:#161b27;
+      --card-2:#1b2130;
+      --border:#2a3142;
+      --accent:#7fb0e0;
+      --accent-fg:#0b1220;
+      --accent-soft:rgba(127,176,224,.16);
+      --accent-soft-strong:rgba(127,176,224,.32);
+      --accent2:#e08194;
+      --accent2-soft:rgba(224,129,148,.18);
+      --link:#8fc0ee;
+      --row-hover:#1b212f;
       --warn:#f2bd6c;
       --warn-bg:#392b12;
-      --track:#333831;
-      --thumb:#5fd0bb;
-      --tick:#767a72;
-      --code-bg:#20241f;
+      --track:#333a4a;
+      --thumb:#7fb0e0;
+      --tick:#767d8c;
+      --code-bg:#1c2230;
       --shadow: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.3);
     }
   }
   :root[data-theme="dark"]{
-    --bg:#111311;
-    --fg:#e9e8e2;
-    --muted:#a1a49f;
-    --muted-2:#84877f;
-    --card:#181b19;
-    --card-2:#1e2320;
-    --border:#2b302a;
-    --accent:#5fd0bb;
-    --accent-fg:#0c1210;
-    --accent-soft:rgba(95,208,187,.14);
-    --accent-soft-strong:rgba(95,208,187,.30);
-    --link:#7fdcc8;
-    --row-hover:#1d2320;
+    --bg:#10131c;
+    --fg:#e8eaf0;
+    --muted:#9aa3b2;
+    --muted-2:#7d8494;
+    --card:#161b27;
+    --card-2:#1b2130;
+    --border:#2a3142;
+    --accent:#7fb0e0;
+    --accent-fg:#0b1220;
+    --accent-soft:rgba(127,176,224,.16);
+    --accent-soft-strong:rgba(127,176,224,.32);
+    --accent2:#e08194;
+    --accent2-soft:rgba(224,129,148,.18);
+    --link:#8fc0ee;
+    --row-hover:#1b212f;
     --warn:#f2bd6c;
     --warn-bg:#392b12;
-    --track:#333831;
-    --thumb:#5fd0bb;
-    --tick:#767a72;
-    --code-bg:#20241f;
+    --track:#333a4a;
+    --thumb:#7fb0e0;
+    --tick:#767d8c;
+    --code-bg:#1c2230;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.3);
   }
 
@@ -101,12 +110,31 @@
     margin-bottom:22px;
     border-bottom:1px solid var(--border);
   }
+  /* Restrained kicker rule: a short two-tone bar above the headline. This is
+     the site's one deliberate "patriotic" touch — a small, editorial detail
+     rather than a themed banner. */
+  .masthead-rule{
+    width:56px;
+    height:3px;
+    border-radius:2px;
+    margin-bottom:14px;
+    background:linear-gradient(90deg, var(--accent), var(--accent2));
+  }
   .masthead h1{
     font-family:var(--serif);
     font-size:2.5rem;
     letter-spacing:-0.01em;
     margin:0 0 12px;
     color:var(--fg);
+    display:flex;
+    align-items:center;
+    gap:.4rem;
+  }
+  .masthead h1 .star-mark{
+    flex:none;
+    width:.62em;
+    height:.62em;
+    color:var(--accent2);
   }
   .standfirst{
     font-family:var(--serif);
@@ -718,7 +746,8 @@
 <div class="wrap">
 
   <header class="masthead">
-    <h1>2026 Impact Ranker</h1>
+    <div class="masthead-rule" aria-hidden="true"></div>
+    <h1><svg class="star-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.5l2.9 6.86 7.42.62-5.64 4.88 1.72 7.24L12 17.27l-6.4 3.83 1.72-7.24L1.68 8.98l7.42-.62z"/></svg>2026 Impact Ranker</h1>
     <p class="standfirst">Which competitive U.S. House and Senate races give a Democratic donor the most impact per dollar — right now.</p>
     <p class="lede">
       Impact here is how much the next dollar donated is expected to move the chance of flipping that seat and
@@ -768,7 +797,7 @@
             <th class="col-extra">Rank</th>
             <th class="sortable num col-extra" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
             <th class="sortable num col-extra" data-key="money">Money used <span class="arrow"></span></th>
-            <th class="sortable num col-extra" data-key="outside" title="Party-committee and super-PAC spending helping this candidate, before the outside-money discount">Outside $ <span class="arrow"></span></th>
+            <th class="sortable num col-extra" data-key="outside" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">Outside $ <span class="arrow"></span></th>
           </tr>
         </thead>
         <tbody id="races-tbody"></tbody>
@@ -917,7 +946,7 @@
 
         <div class="control">
           <div class="control-widget">
-            <label for="outside_mult">Outside money discount <span class="val" id="outside_mult-val">0.35</span></label>
+            <label for="outside_mult">Outside money multiplier <span class="val" id="outside_mult-val">0.35</span></label>
             <div class="slider-box">
               <input type="range" id="outside_mult" min="0" max="1" step="0.05" value="0.35">
               <div class="tick" style="left:calc(8px + (100% - 16px) * 0.35)" title="default 0.35"></div>
@@ -947,7 +976,7 @@
           <div class="control-def">
             <span class="term">What this is</span>
             <p>Which FEC-derived figure stands in for "how funded is this campaign already" when computing
-              diminishing returns, before the outside-money discount above is added on top. <strong>Cash on
+              diminishing returns, before the outside-money multiplier above is added on top. <strong>Cash on
               hand + projected contributions</strong> extrapolates each campaign's recent monthly fundraising
               rate out to Election Day; <strong>total receipts</strong> is everything raised so far this cycle;
               <strong>cash on hand</strong> is only what's currently banked. Whichever figure is chosen is used
@@ -1012,22 +1041,24 @@
           electorate size relative to the median House district. Net effect: electorate size cancels out of
           the seat term rather than mechanically favoring small districts, which is what would happen if a
           dollar instead bought a fixed number of persuaded voters.</p>
-        <p><strong>Outside money, discounted.</strong> Party committees and super PACs also spend on a
+        <p><strong>Outside money, weighted down.</strong> Party committees and super PACs also spend on a
           candidate's behalf, and that spending already reaches voters &mdash; but a dollar of it doesn't buy
           as much reach as a dollar the candidate's own committee spends, because federal law gives candidates
           (not outside groups) the lowest unit charge for broadcast time in the 60 days before an election.
           <code>money_eff&nbsp;=&nbsp;M&nbsp;+&nbsp;outside_mult&nbsp;&times;&nbsp;outside_total</code>, where
           <code>M</code> is whichever of the candidate's own money figures is selected below and
           <code>outside_total</code> is party-committee plus super-PAC spending supporting or opposing the
-          candidate. The "Outside money discount" slider is <code>outside_mult</code>.</p>
+          candidate. The "Outside money multiplier" slider is <code>outside_mult</code>.</p>
         <p><strong>Diminishing returns, with a fixed constant instead of a floor.</strong> A campaign that
           already has a lot of money gets less marginal benefit from one more dollar than a campaign still
           building out its operation. <code>passes&nbsp;=&nbsp;money_eff&nbsp;/&nbsp;P_dollars</code> is how
           many of these full-race impression passes the campaign's effective money buys. Rather than a flat
-          dollar floor on money, every campaign is treated as already having reached its electorate once
-          (<code>prior_reach&nbsp;=&nbsp;1</code>) before any donation arrives, purely so the first dollar's
-          value stays finite; it is a fudge factor with no empirical grounding, which is why it is fixed rather
-          than a slider here. The marginal value of one more dollar is then
+          dollar floor on money, every campaign is treated as already having reached its electorate several
+          times over (<code>prior_reach&nbsp;=&nbsp;10</code>) before any donation arrives &mdash; standing in
+          for the reach a campaign gets for free, from its ballot party label, earned media, existing name
+          recognition, and party infrastructure, and also keeping the first dollar's value finite. It is a
+          judgment call with no rigorous empirical grounding, which is why it is fixed rather than a slider
+          here. The marginal value of one more dollar is then
           <code>(prior_reach&nbsp;+&nbsp;passes)<sup>&minus;eta</sup>&nbsp;/&nbsp;P_dollars</code> &mdash; the
           derivative, with respect to dollars, of a CRRA utility curve over total passes. It converges to the
           old <code>money_eff<sup>&minus;eta</sup></code>&middot;<code>P<sup>eta&minus;1</sup></code> shape once
@@ -1390,7 +1421,7 @@
         '<td class="rank-cell col-extra" data-label="Rank">' + rankText + '</td>' +
         '<td class="num col-extra reach-td" data-label="Reach cost">' + reachText + '</td>' +
         '<td class="num col-extra money-td" data-label="Money used" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
-        '<td class="num col-extra outside-td" data-label="Outside $" title="Party-committee and super-PAC spending helping this candidate, before the outside-money discount">' + outsideText + '</td>' +
+        '<td class="num col-extra outside-td" data-label="Outside $" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">' + outsideText + '</td>' +
         '</tr>'
       );
     }).join("");
