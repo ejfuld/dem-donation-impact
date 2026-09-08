@@ -797,6 +797,7 @@
 
     <p class="exclusion-note" id="exclusion-note"></p>
     <p class="exclusion-note" id="override-note" hidden></p>
+    <p class="exclusion-note" id="noscore-note" hidden></p>
   </section>
 
   <section class="controls">
@@ -1605,12 +1606,38 @@
     el.hidden = false;
   }
 
+  // Third small-print footnote: races deliberately left unscored (NO_SCORE in
+  // scripts/refresh.py). They stay in the table with an em dash, so this note
+  // is what tells a reader looking for one of them that it was a decision
+  // rather than an oversight. Renders nothing when meta.no_score is empty.
+  function renderNoScoreNote(meta){
+    var el = $("noscore-note");
+    if (!el) return;
+    var items = meta.no_score || [];
+    if (!items.length) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    el.innerHTML = items.map(function(it){
+      var s = "<strong>" + escapeHtml(it.race) + " is listed but not scored.</strong> " +
+        escapeHtml(it.note || "");
+      if (it.source) {
+        s += ' <a href="' + escapeHtml(it.source) +
+             '" target="_blank" rel="noopener noreferrer">Source</a>.';
+      }
+      return s;
+    }).join(" ");
+    el.hidden = false;
+  }
+
   function init(data){
     ALL_RACES = data.races || [];
     META = data.meta || {};
     $("forecast-date").textContent = META.forecast_date || "unknown";
     renderExclusionNote(META);
     renderOverrideNote(META, ALL_RACES);
+    renderNoScoreNote(META);
     var kEl = $("k-dollars");
     if (kEl && META.k_dollars_per_reach != null) kEl.textContent = fmtMoney(META.k_dollars_per_reach);
 
