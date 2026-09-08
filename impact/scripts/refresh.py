@@ -1055,7 +1055,7 @@ def main():
     house_calc_reach = [r["reach"] for r in races if r["ch"] == "H" and r["calc"]]
     anchor = sum(house_calc_reach) / len(house_calc_reach) if house_calc_reach else 0.0
 
-    total_races = len(races) + len(excluded_all)  # every race on the board, scored or not
+    total_races = len(races) + , scored or not
 
     raw_by_race = {}
     for r in races:
