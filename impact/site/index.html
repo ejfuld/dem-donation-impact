@@ -22,6 +22,12 @@
        the "patriotic" note reads as one deliberate touch, not a theme. */
     --accent2:#a3293f;
     --accent2-soft:rgba(163,41,63,.14);
+    /* Flag motif colours — the actual red/white/blue, used only by the faded
+       decorative flag. Kept separate from --accent/--accent2 so the UI palette
+       can stay navy-forward without dragging the flag toward monochrome. */
+    --flag-blue:#1d3f66;
+    --flag-red:#b22234;
+    --flag-white:#ffffff;
     --link:#1c4f82;
     --row-hover:#eef1f5;
     --warn:#8a5300;
@@ -49,6 +55,9 @@
       --accent-soft-strong:rgba(127,176,224,.32);
       --accent2:#e08194;
       --accent2-soft:rgba(224,129,148,.18);
+      --flag-blue:#4d7fb5;
+      --flag-red:#c8455a;
+      --flag-white:#dfe4ec;
       --link:#8fc0ee;
       --row-hover:#1b212f;
       --warn:#f2bd6c;
@@ -74,6 +83,9 @@
     --accent-soft-strong:rgba(127,176,224,.32);
     --accent2:#e08194;
     --accent2-soft:rgba(224,129,148,.18);
+    --flag-blue:#4d7fb5;
+    --flag-red:#c8455a;
+    --flag-white:#dfe4ec;
     --link:#8fc0ee;
     --row-hover:#1b212f;
     --warn:#f2bd6c;
@@ -97,6 +109,8 @@
     line-height:1.5;
   }
   .wrap{
+    position:relative;   /* lifts page content above the fixed Capitol watermark */
+    z-index:1;
     max-width:1200px;
     margin:0 auto;
     padding:32px 20px 64px;
@@ -104,12 +118,58 @@
   a{color:var(--link);}
   h1,h2,h3{line-height:1.2;font-weight:700;}
 
+  /* ---------- patriotic background imagery ----------
+     Two faded, purely decorative layers: a flag motif behind the masthead
+     and a Capitol silhouette anchored to the page. Both are inline SVG (no
+     external requests, and they theme themselves off CSS variables), both
+     are aria-hidden and pointer-events:none, and both sit UNDER the content
+     so nothing here can affect readability or interaction. The flag reads as
+     the US flag specifically — a blue canton of stars over red and white
+     stripes — but is weighted toward blue and pitched low enough in opacity
+     to stay a texture rather than a picture. */
+  .page-capitol{
+    position:fixed;
+    right:-10px;
+    bottom:0;
+    width:min(48vw, 560px);
+    height:auto;
+    color:var(--accent);
+    opacity:.10;
+    z-index:0;
+    pointer-events:none;
+  }
+  .masthead-flag{
+    position:absolute;
+    top:50%;
+    right:-10px;
+    transform:translateY(-50%);
+    width:min(46%, 420px);
+    height:auto;
+    opacity:.16;
+    pointer-events:none;
+  }
+  .masthead-flag .fs-blue{fill:var(--flag-blue);}
+  .masthead-flag .fs-red{fill:var(--flag-red);}
+  .masthead-flag .fs-white{fill:var(--flag-white);}
+  .masthead-flag .fs-star{fill:var(--flag-white);}
+  @media (max-width:640px){
+    .masthead-flag{width:62%;right:-24px;opacity:.13;}
+    .page-capitol{width:78vw;opacity:.05;}
+  }
+
   /* ---------- masthead ---------- */
   .masthead{
+    position:relative;
+    overflow:hidden;
     padding-bottom:22px;
     margin-bottom:22px;
     border-bottom:1px solid var(--border);
   }
+  /* Masthead text sits above the flag motif. */
+  .masthead-rule,
+  .masthead h1,
+  .masthead .standfirst,
+  .masthead .lede{position:relative;z-index:1;}
   /* Restrained kicker rule: a short two-tone bar above the headline. This is
      the site's one deliberate "patriotic" touch — a small, editorial detail
      rather than a themed banner. */
@@ -155,6 +215,20 @@
   .lede strong{color:var(--accent);}
 
   section{margin-bottom:24px;}
+
+  .donor-notice{
+    font-size:.82rem;
+    line-height:1.5;
+    color:var(--muted);
+    background:var(--card-2);
+    border:1px solid var(--border);
+    border-left:3px solid var(--accent);
+    border-radius:6px;
+    padding:10px 14px;
+    margin:0 0 20px;
+    max-width:90ch;
+  }
+  .donor-notice a{color:var(--link);}
 
   .card{
     background:var(--card);
@@ -213,6 +287,21 @@
     cursor:pointer;
   }
   .toggle-extra-btn:hover{background:var(--row-hover);}
+
+  /* Horizontal-scroll slider: an explicit, always-reachable control for
+     wide tables (e.g. with expanded columns), rather than relying only on
+     the table-wrap's own scrollbar - which sits at the BOTTOM of however
+     tall the table is, and can be well below the fold. Hidden via the
+     [hidden] attribute (not just CSS) whenever nothing overflows, so it
+     never claims layout space it doesn't need. Kept in sync with
+     table-wrap's scrollLeft in both directions by updateScrollAffordance(). */
+  .table-hscroll{
+    flex:1 1 auto;
+    min-width:0;
+    accent-color:var(--accent);
+    cursor:pointer;
+  }
+  .table-hscroll[hidden]{display:none;}
 
   /* ---------- table ---------- */
   .table-wrap{
@@ -566,21 +655,6 @@
     max-width:90ch;
   }
 
-  /* ---------- why chips ---------- */
-  td.why-td{white-space:normal;max-width:230px;min-width:110px;}
-  .why-chips{display:flex;flex-wrap:wrap;gap:4px;}
-  .chip{
-    display:inline-block;
-    font-size:.68rem;
-    font-weight:600;
-    padding:1px 7px;
-    border-radius:999px;
-    border:1px solid var(--border);
-    background:var(--code-bg);
-    color:var(--muted);
-    white-space:nowrap;
-  }
-
   footer{
     margin-top:28px;
     padding-top:16px;
@@ -685,6 +759,9 @@
       margin-bottom:2px;
     }
 
+    /* rank: small kicker line directly above the impact hero number */
+    td.rank-cell{font-size:.78rem;padding:0 0 4px;}
+
     /* impact: large hero number, no separate label */
     td.impact-td{padding:0 0 10px;min-width:0;}
     td.impact-td::before{display:none;}
@@ -723,8 +800,6 @@
       display:inline;margin:0;
     }
 
-    td.why-td{padding:10px 0 4px;}
-
     td.donate-td{padding:10px 0 0;}
     td.donate-td::before{display:none;}
     td.donate-td .donate-btn{
@@ -743,9 +818,54 @@
 </style>
 </head>
 <body>
+  <svg class="page-capitol" viewBox="0 0 400 210" preserveAspectRatio="xMaxYMax meet" aria-hidden="true" focusable="false">
+    <g fill="currentColor">
+      <path d="M197 8 q3-5 6 0 v6 h-6 z"/>
+      <circle cx="200" cy="16" r="5"/>
+      <path d="M191 22 h18 v6 h-18 z"/>
+      <path d="M188 28 h24 l-2 20 h-20 z"/>
+      <path d="M200 48 q34 4 40 44 h-80 q6-40 40-44 z"/>
+      <path d="M156 92 h88 v10 h-88 z"/>
+      <path d="M162 102 h76 v42 h-76 z"/>
+      <g>
+        <rect x="168" y="106" width="5" height="36"/><rect x="180" y="106" width="5" height="36"/>
+        <rect x="192" y="106" width="5" height="36"/><rect x="204" y="106" width="5" height="36"/>
+        <rect x="216" y="106" width="5" height="36"/><rect x="228" y="106" width="5" height="36"/>
+      </g>
+      <path d="M150 144 h100 v8 h-100 z"/>
+      <path d="M60 152 h280 v14 h-280 z"/>
+      <g>
+        <rect x="72" y="166" width="7" height="30"/><rect x="90" y="166" width="7" height="30"/>
+        <rect x="108" y="166" width="7" height="30"/><rect x="126" y="166" width="7" height="30"/>
+        <rect x="144" y="166" width="7" height="30"/><rect x="162" y="166" width="7" height="30"/>
+        <rect x="180" y="166" width="7" height="30"/><rect x="198" y="166" width="7" height="30"/>
+        <rect x="216" y="166" width="7" height="30"/><rect x="234" y="166" width="7" height="30"/>
+        <rect x="252" y="166" width="7" height="30"/><rect x="270" y="166" width="7" height="30"/>
+        <rect x="288" y="166" width="7" height="30"/><rect x="306" y="166" width="7" height="30"/>
+        <rect x="324" y="166" width="7" height="30"/>
+      </g>
+      <path d="M40 196 h320 v14 h-320 z"/>
+    </g>
+  </svg>
 <div class="wrap">
 
   <header class="masthead">
+    <svg class="masthead-flag" viewBox="0 0 600 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+      <defs>
+        <path id="star" d="M0,-6 L1.41,-1.85 5.71,-1.85 2.28,0.71 3.53,4.85 0,2.28 -3.53,4.85 -2.28,0.71 -5.71,-1.85 -1.41,-1.85 Z"/>
+        <linearGradient id="flagFade" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+          <stop offset="0.45" stop-color="#fff" stop-opacity="0.55"/>
+          <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+        </linearGradient>
+        <mask id="flagMask"><rect x="0" y="0" width="600" height="300" fill="url(#flagFade)"/></mask>
+      </defs>
+      <g mask="url(#flagMask)">
+        <rect class="fs-red" x="0" y="0.00" width="600.0" height="23.08"/><rect class="fs-white" x="0" y="23.08" width="600.0" height="23.08"/><rect class="fs-red" x="0" y="46.15" width="600.0" height="23.08"/><rect class="fs-white" x="0" y="69.23" width="600.0" height="23.08"/><rect class="fs-red" x="0" y="92.31" width="600.0" height="23.08"/><rect class="fs-white" x="0" y="115.38" width="600.0" height="23.08"/><rect class="fs-red" x="0" y="138.46" width="600.0" height="23.08"/><rect class="fs-white" x="0" y="161.54" width="600.0" height="23.08"/><rect class="fs-red" x="0" y="184.62" width="600.0" height="23.08"/><rect class="fs-white" x="0" y="207.69" width="600.0" height="23.08"/><rect class="fs-red" x="0" y="230.77" width="600.0" height="23.08"/><rect class="fs-white" x="0" y="253.85" width="600.0" height="23.08"/><rect class="fs-red" x="0" y="276.92" width="600.0" height="23.08"/>
+        <rect class="fs-blue" x="0" y="0" width="240" height="161.54"/>
+        <g class="fs-star"><use href="#star" x="24" y="22"/><use href="#star" x="60" y="22"/><use href="#star" x="96" y="22"/><use href="#star" x="132" y="22"/><use href="#star" x="168" y="22"/><use href="#star" x="204" y="22"/><use href="#star" x="24" y="52"/><use href="#star" x="60" y="52"/><use href="#star" x="96" y="52"/><use href="#star" x="132" y="52"/><use href="#star" x="168" y="52"/><use href="#star" x="204" y="52"/><use href="#star" x="24" y="82"/><use href="#star" x="60" y="82"/><use href="#star" x="96" y="82"/><use href="#star" x="132" y="82"/><use href="#star" x="168" y="82"/><use href="#star" x="204" y="82"/><use href="#star" x="24" y="112"/><use href="#star" x="60" y="112"/><use href="#star" x="96" y="112"/><use href="#star" x="132" y="112"/><use href="#star" x="168" y="112"/><use href="#star" x="204" y="112"/><use href="#star" x="24" y="142"/><use href="#star" x="60" y="142"/><use href="#star" x="96" y="142"/><use href="#star" x="132" y="142"/><use href="#star" x="168" y="142"/><use href="#star" x="204" y="142"/><use href="#star" x="42" y="37"/><use href="#star" x="78" y="37"/><use href="#star" x="114" y="37"/><use href="#star" x="150" y="37"/><use href="#star" x="186" y="37"/><use href="#star" x="42" y="67"/><use href="#star" x="78" y="67"/><use href="#star" x="114" y="67"/><use href="#star" x="150" y="67"/><use href="#star" x="186" y="67"/><use href="#star" x="42" y="97"/><use href="#star" x="78" y="97"/><use href="#star" x="114" y="97"/><use href="#star" x="150" y="97"/><use href="#star" x="186" y="97"/><use href="#star" x="42" y="127"/><use href="#star" x="78" y="127"/><use href="#star" x="114" y="127"/><use href="#star" x="150" y="127"/><use href="#star" x="186" y="127"/></g>
+      </g>
+    </svg>
     <div class="masthead-rule" aria-hidden="true"></div>
     <h1><svg class="star-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.5l2.9 6.86 7.42.62-5.64 4.88 1.72 7.24L12 17.27l-6.4 3.83 1.72-7.24L1.68 8.98l7.42-.62z"/></svg>2026 Impact Ranker</h1>
     <p class="standfirst">Which competitive U.S. House and Senate races give a Democratic donor the most impact per dollar — right now.</p>
@@ -777,8 +897,13 @@
     </div>
   </section>
 
+  <p class="donor-notice">Only U.S. citizens and green-card holders may legally donate to U.S. federal
+    political campaigns. If that's not you but you'd still like to help, many campaigns also take
+    volunteers &mdash; check the candidate's own website.</p>
+
   <section class="table-section">
     <div class="table-toolbar">
+      <input type="range" id="table-hscroll" class="table-hscroll" min="0" max="0" value="0" step="1" aria-label="Scroll table left and right" aria-controls="races-table" hidden>
       <button type="button" class="toggle-extra-btn" id="toggle-extra-top" aria-expanded="false" aria-controls="races-table">See expanded columns</button>
     </div>
 
@@ -786,17 +911,16 @@
       <table id="races-table">
         <thead>
           <tr>
+            <th>Rank</th>
             <th class="sortable num" data-key="impact">Impact <span class="arrow"></span></th>
             <th class="sortable" data-key="race">Race <span class="arrow"></span></th>
             <th class="sortable" data-key="name">Candidate <span class="arrow"></span></th>
             <th class="sortable" data-key="ch">Chamber <span class="arrow"></span></th>
             <th class="sortable" data-key="rating">Rating <span class="arrow"></span></th>
             <th class="sortable num" data-key="p">Dem win % <span class="arrow"></span></th>
-            <th title="Rule-based tags summarizing why this race is notable">Why</th>
+            <th class="sortable num" data-key="money" title="The money figure selected by the &quot;Money that counts as already raised&quot; control below, as most recently reported to the FEC">Money <span class="arrow"></span></th>
             <th>Donate</th>
-            <th class="col-extra">Rank</th>
             <th class="sortable num col-extra" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
-            <th class="sortable num col-extra" data-key="money">Money used <span class="arrow"></span></th>
             <th class="sortable num col-extra" data-key="outside" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">Outside $ <span class="arrow"></span></th>
           </tr>
         </thead>
@@ -1209,7 +1333,7 @@
       race: r.race, ch: r.ch, name: r.name, party: r.party, rating: r.rating,
       p: r.p, margin: r.margin, match: r.match, cov: r.cov,
       override: !!r.override, note: r.note || "", source: r.source || "",
-      why: r.why || [], calc: calc,
+      calc: calc,
       reach: calc ? r.reach : null,
       moneyDefRaw: M, moneyUsed: M, outsideTotal: outsideTotal,
       pDollars: null, passes: null,
@@ -1272,7 +1396,7 @@
   // (rounded-to-two-decimals) impact value: ties share a rank and the next
   // distinct value skips ahead (1, 2, 2, 4, ...). calc === false rows get
   // rank = null (rendered as "—").
-  function assignRanksAndWhy(rows){
+  function assignRanks(rows){
     var calcRows = rows.filter(function(r){ return r.calc; });
     calcRows.sort(function(a, b){
       if (b.impact2 !== a.impact2) return b.impact2 - a.impact2;
@@ -1323,7 +1447,7 @@
     var filtered = computed.filter(matchesFilter);
 
     // Rank, over the full filtered set, before pagination.
-    assignRanksAndWhy(filtered);
+    assignRanks(filtered);
 
     filtered.sort(function(a, b){ return compareRows(a, b, state.sortKey, state.sortDir); });
 
@@ -1396,31 +1520,23 @@
       var reachText = r.calc ? r.reach.toFixed(1) : DASH;
       var outsideText = (r.outsideTotal && r.outsideTotal > 0) ? fmtMoney(r.outsideTotal) : DASH;
 
-      var whyCell = "";
-      if (r.why && r.why.length) {
-        whyCell = '<div class="why-chips">' + r.why.map(function(w){
-          return '<span class="chip">' + escapeHtml(w) + '</span>';
-        }).join("") + '</div>';
-      }
-
-      // Cell order below matches the <thead> order exactly: the 8
-      // default-visible columns first (Impact..Donate), then the 4
-      // .col-extra columns (Rank, Reach cost, Money used, Outside $),
-      // hidden unless #races-table has .show-extra. Every <td> carries
-      // data-label so the mobile card layout can print it via ::before.
+      // Cell order below matches the <thead> order exactly: Rank plus the 8
+      // other default-visible columns first (Impact..Donate), then the 2
+      // .col-extra columns (Reach cost, Outside $), hidden unless
+      // #races-table has .show-extra. Every <td> carries data-label so the
+      // mobile card layout can print it via ::before.
       return (
         '<tr>' +
+        '<td class="rank-cell" data-label="Rank">' + rankText + '</td>' +
         '<td class="num impact-td" data-label="Impact">' + impactCell + '</td>' +
         '<td class="race-td" data-label="Race">' + escapeHtml(r.race) + ak + '</td>' +
         '<td class="candidate-td" data-label="Candidate">' + escapeHtml(r.name) + warn + overrideMark + '</td>' +
         '<td class="chamber-td" data-label="Chamber"><span class="pill' + (r.ch === "S" ? " senate" : "") + '">' + (r.ch === "S" ? "Senate" : "House") + '</span></td>' +
         '<td class="rating-td" data-label="Rating">' + ratingText + '</td>' +
         '<td class="num pwin-td" data-label="Dem win %">' + pCell + '</td>' +
-        '<td class="why-td" data-label="Why">' + whyCell + '</td>' +
+        '<td class="num money-td" data-label="Money" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
         '<td class="donate-td" data-label="Donate"><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
-        '<td class="rank-cell col-extra" data-label="Rank">' + rankText + '</td>' +
         '<td class="num col-extra reach-td" data-label="Reach cost">' + reachText + '</td>' +
-        '<td class="num col-extra money-td" data-label="Money used" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
         '<td class="num col-extra outside-td" data-label="Outside $" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">' + outsideText + '</td>' +
         '</tr>'
       );
@@ -1443,6 +1559,23 @@
     var maxScroll = wrap.scrollWidth - wrap.clientWidth;
     wrap.classList.toggle("has-more-right", maxScroll > 1 && wrap.scrollLeft < maxScroll - 1);
     wrap.classList.toggle("has-more-left", wrap.scrollLeft > 1);
+
+    // Keep the explicit horizontal-scroll slider in sync. It is hidden
+    // outright when nothing overflows, so it never occupies toolbar space
+    // it hasn't earned. Writing .value here is what makes native scrolling
+    // (trackpad, scrollbar, keyboard) move the slider; the slider's own
+    // "input" handler covers the other direction. Setting scrollLeft from
+    // that handler re-enters this function with an already-equal value, so
+    // the two stay in sync without feedback loops.
+    var slider = els.hscroll;
+    if (!slider) return;
+    if (maxScroll <= 1) {
+      slider.hidden = true;
+      return;
+    }
+    slider.hidden = false;
+    slider.max = String(Math.round(maxScroll));
+    slider.value = String(Math.round(wrap.scrollLeft));
   }
 
   function updatePagination(total, startIdx, endIdx){
@@ -1570,6 +1703,11 @@
     if (els.tableWrap) {
       els.tableWrap.addEventListener("scroll", updateScrollAffordance);
     }
+    if (els.hscroll && els.tableWrap) {
+      els.hscroll.addEventListener("input", function(){
+        els.tableWrap.scrollLeft = parseFloat(els.hscroll.value) || 0;
+      });
+    }
     window.addEventListener("resize", updateScrollAffordance);
     window.addEventListener("resize", syncControlsAccordion);
 
@@ -1679,6 +1817,7 @@
     els.theta = $("theta");
     els.outside_mult = $("outside_mult");
     els.tableWrap = $("table-wrap");
+    els.hscroll = $("table-hscroll");
     els.toggleExtraTop = $("toggle-extra-top");
     els.toggleExtraBottom = $("toggle-extra-bottom");
     els.controlsAcc = $("controls-acc");
