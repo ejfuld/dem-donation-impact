@@ -263,6 +263,34 @@ _top15 = set(r['race'] for r in sorted(races, key=lambda x: -x['tip'])[:15])
 for r in races:
     r['why'] = compute_why(r, _top15)
 
+# Races deliberately left UNSCORED: kept on the board with an em dash and a
+# footnote rather than dropped, so a reader who goes looking finds a reason
+# rather than assuming an oversight. KEEP IN SYNC with NO_SCORE in
+# scripts/refresh.py - that is the copy the nightly job actually runs.
+NO_SCORE = {
+    'MT': dict(
+        note="Montana's anti-Republican vote is split between two candidates: Alani "
+             "Bankhead (D) and Seth Bodnar (I), whom Democratic Party leaders have "
+             "endorsed. Bankhead has declined to withdraw. Silver's model has both "
+             "running well behind the Republican, and a dollar to either one plausibly "
+             "costs the other, so any single-candidate impact score here would be "
+             "misleading. Left unscored until the field resolves.",
+        source='https://montanafreepress.org/2026/08/10/bankhead-still-in-the-running/',
+    ),
+}
+
+no_score_meta = []
+for r in races:
+    _ns = NO_SCORE.get(r['race'])
+    if not _ns:
+        r['no_score'] = False
+        continue
+    r['calc'] = False
+    r['no_score'] = True
+    r['why'] = ['Not scored - see note']
+    no_score_meta.append(dict(race=r['race'], note=_ns['note'], source=_ns.get('source', '')))
+no_score_meta.sort(key=lambda x: x['race'])
+
 excluded_races = sorted(dem_only_races + rep_only_races)
 
 match_counts = {}
@@ -361,6 +389,7 @@ meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
             defaults=DEFAULTS,
             anchor=anchor, total_races=total_races, mean_raw=mean_raw, prior_reach=PRIOR_REACH,
             match_counts=match_counts, overrides=overridden_races,
+            no_score=no_score_meta,
             outside_totals=outside_totals,
             excluded=dict(count=len(excluded_races), dem_only=len(dem_only_races),
                           rep_only=len(rep_only_races), races=excluded_races))
