@@ -312,7 +312,7 @@ overridden_races = sorted(r['race'] for r in races if r.get('override'))
 
 
 
-DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money='proj',
+DEFAULTS = dict(c_house=100.0, senate_mult=0.5, sen_val=13.05, eta=0.67, theta=0.40, money='proj',
                 outside_mult=0.35)
 
 # money_eff: the money the campaign effectively commands - its own selected
@@ -397,7 +397,7 @@ meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
             outside_totals=outside_totals,
             excluded=dict(count=len(excluded_races), dem_only=len(dem_only_races),
                           rep_only=len(rep_only_races), races=excluded_races))
-json.dump(dict(meta=meta, races=races), open(os.path.join(BASE, '..', 'site', 'data.json'), 'w'),
+json.dump(dict(meta=meta, races=races), open(os.path.join(BASE, '..', '..', 'data.json'), 'w'),
           separators=(',', ':'))
 print('wrote', len(races), 'races (', meta['n_calc'], 'calc )')
 print('excluded', meta['excluded']['count'], 'races: dem_only=%d rep_only=%d' %

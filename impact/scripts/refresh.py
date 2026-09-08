@@ -47,7 +47,10 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.join(HERE, "..", "data")
-SITE = os.path.join(HERE, "..", "site")
+# The site now lives at the REPO ROOT (so the public URL is
+# ejfuld.github.io/dem-donation-impact/ rather than .../impact/site/),
+# so data.json is written two levels up from impact/scripts/.
+SITE = os.path.join(HERE, "..", "..")
 DATA_JSON = os.path.join(SITE, "data.json")
 
 SIG = {"H": 6.65, "S": 6.69}
@@ -127,7 +130,7 @@ NO_SCORE = {
     ),
 }
 
-DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money="proj",
+DEFAULTS = dict(c_house=100.0, senate_mult=0.5, sen_val=13.05, eta=0.67, theta=0.40, money="proj",
                 outside_mult=0.35)
 
 # Datawrapper chart ids + a known-good version to start probing upward from.
