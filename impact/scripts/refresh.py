@@ -466,7 +466,19 @@ def build_races():
                 margin = 0.0
                 party = party_bucket(chosen.get("candidate_party"))
 
-            rating = (chosen.get("race_rating") or "").strip()
+            # Silver publishes race_rating on only ONE candidate row per race -
+            # in practice the front-runner's. Reading it off `chosen` (the
+            # Democratic-aligned candidate) therefore returned "" for every race
+            # the Democrat is NOT leading, which is most of the interesting ones:
+            # IA, KS and MT all showed a blank Rating column while ME/MI/OH (where
+            # the Democrat leads) showed theirs. The rating describes the RACE, not
+            # the candidate, so take the first non-empty one from any candidate in
+            # it - preferring the front-runner, whose row normally carries it.
+            rating = ""
+            for _cand in cands_sorted:
+                rating = (_cand.get("race_rating") or "").strip()
+                if rating:
+                    break
 
             p = as_frac(chosen.get("win_probability"))
             el = vpi["elasticity"]
@@ -1043,7 +1055,7 @@ def main():
     house_calc_reach = [r["reach"] for r in races if r["ch"] == "H" and r["calc"]]
     anchor = sum(house_calc_reach) / len(house_calc_reach) if house_calc_reach else 0.0
 
-    total_races = len(races) + len(excluded_all)   # every race on the board, scored or not
+    total_races = len(races) + len(excluded_all)  # every race on the board, scored or not
 
     raw_by_race = {}
     for r in races:
