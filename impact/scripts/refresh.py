@@ -103,6 +103,26 @@ def active_overrides(today=None):
     return out
 
 
+# Races deliberately left UNSCORED. They stay on the board - so a reader who
+# goes looking for them finds an explanation rather than assuming an oversight
+# - but get an em dash instead of an impact score and contribute nothing to the
+# normalising mean, exactly like a race whose tipping-point probability is zero.
+#
+# This is for races where the model's single-Democratic-candidate assumption
+# breaks down, NOT for races we merely dislike the answer for. Keep the bar
+# high and always state the reason: the note below is shown to readers verbatim.
+NO_SCORE = {
+    "MT": dict(
+        note="Montana's anti-Republican vote is split between two candidates: Alani "
+             "Bankhead (D) and Seth Bodnar (I), whom Democratic Party leaders have "
+             "endorsed. Bankhead has declined to withdraw. Silver's model has both "
+             "running well behind the Republican, and a dollar to either one plausibly "
+             "costs the other, so any single-candidate impact score here would be "
+             "misleading. Left unscored until the field resolves.",
+        source="https://montanafreepress.org/2026/08/10/bankhead-still-in-the-running/",
+    ),
+}
+
 DEFAULTS = dict(c_house=40.0, senate_mult=0.75, sen_val=13.05, eta=0.5, theta=0.40, money="proj",
                 outside_mult=0.35)
 
@@ -115,7 +135,11 @@ CHARTS = {
 }
 
 FEC_BASE_URL = "https://api.open.fec.gov/v1/candidates/totals/"
-FEC_SCHEDULE_E_URL = "https://api.open.fec.gov/v1/schedules/schedule_e/by_candidate/"
+# The RAW independent-expenditure feed, not .../schedule_e/by_candidate/.
+# The aggregate endpoint omits 24- and 48-hour reports by FEC's own
+# documentation, and its undocumented cross-field validation started 422ing
+# our office+state+cycle combination. See fetch_schedule_e_raw().
+FEC_SCHEDULE_E_URL = "https://api.open.fec.gov/v1/schedules/schedule_e/"
 USER_AGENT = "impact-refresh/1.0 (+https://github.com/; static site data refresh script)"
 HTTP_TIMEOUT = 25
 MAX_VERSION_PROBE = 250  # safety cap so a probing loop can never run forever
@@ -671,80 +695,126 @@ def find_opponent_id(race, chosen_party_bucket, fec_by_race):
 # FEC independent expenditures (schedule_e): outside/IE money, best-effort
 # ---------------------------------------------------------------------------
 
-def fetch_schedule_e_totals(office, state, api_key):
-    """Page through /v1/schedules/schedule_e/by_candidate/ for one
-    (office, state) pair.
+def _http_get_json(url):
+    """GET + parse JSON, but re-raise HTTP errors WITH the server's response
+    body attached.
 
-    The endpoint's validator is fussy and cost us a silent failure once:
-      - `office` must be the WORD "house"/"senate", not the "H"/"S" codes
-        every other FEC endpoint uses;
-      - `cycle` is required;
-      - with office=house (and senate) a `state` argument is ALSO required,
-        so this cannot be pulled in one bulk call - it is per state.
-    Returns a list of result dicts carrying candidate_id,
-    support_oppose_indicator ("S"/"O") and a total dollar figure."""
-    results = []
-    page = 1
-    while page <= 50:  # hard stop; no state has anywhere near this many pages
+    This exists because of a real, expensive failure: 83 of 85 calls to
+    schedule_e/by_candidate/ returned HTTP 422 and the handler logged only
+    "HTTP Error 422: Unprocessable Entity", throwing away FEC's own
+    error.message - which is the single piece of information that names the
+    offending field. The run stayed green, outside money silently read $0 on
+    455 of 457 races, and nobody could tell why. Never discard an error body."""
+    try:
+        return json.loads(http_get(url).decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", "replace")[:400]
+        except Exception:  # noqa: BLE001 - body may already be consumed
+            body = "<unreadable>"
+        raise RuntimeError("HTTP %s: %s" % (exc.code, body)) from exc
+
+
+def fetch_schedule_e_raw(office, state, api_key):
+    """Page through the RAW /v1/schedules/schedule_e/ feed for one
+    (office, state) pair and return (candidate_id, "S"|"O") -> dollars.
+
+    Deliberately NOT the by_candidate/ aggregate endpoint, for two reasons:
+
+    1. FEC's own docs: "Aggregates by candidate do not include 24 and 48 hour
+       reports." Those are exactly the filings that carry the bulk of
+       independent-expenditure money in the run-up to an election, so the
+       aggregate endpoint structurally undercounts precisely when the number
+       matters most.
+    2. by_candidate/ has undocumented cross-field validation that started
+       rejecting our office+state+cycle combination with a bare 422. The raw
+       endpoint takes candidate_office / candidate_office_state, which are
+       documented filter fields rather than a required-combination puzzle.
+
+    Uses seek pagination (last_index + last_expenditure_amount), which is what
+    schedule_e supports past page 1; ordinary page= paging silently caps out."""
+    totals = {}
+    rows = 0
+    last_index = None
+    last_amount = None
+    for _ in range(200):  # hard stop: 200 x 100 = 20k rows per office+state
         params = dict(
             api_key=api_key,
             cycle=2026,
-            office=office,
-            state=state,
-            election_full="true",
+            candidate_office=office,          # "H" / "S" here, unlike by_candidate/
+            candidate_office_state=state,
             per_page=100,
-            page=page,
+            sort="-expenditure_amount",
+            sort_hide_null="false",
         )
-        url = FEC_SCHEDULE_E_URL + "?" + urllib.parse.urlencode(params)
-        raw = http_get(url)
-        payload = json.loads(raw.decode("utf-8"))
-        page_results = payload.get("results") or []
-        results.extend(page_results)
-        pagination = payload.get("pagination") or {}
-        total_pages = pagination.get("pages")
-        if not page_results:
+        if last_index is not None:
+            params["last_index"] = last_index
+            params["last_expenditure_amount"] = last_amount
+        payload = _http_get_json(FEC_SCHEDULE_E_URL + "?" + urllib.parse.urlencode(params))
+        results = payload.get("results") or []
+        if not results:
             break
-        if total_pages is not None and page >= total_pages:
+        for rec in results:
+            cid = (rec.get("candidate_id") or "").strip()
+            ind = (rec.get("support_oppose_indicator") or "").strip().upper()
+            if not cid or ind not in ("S", "O"):
+                continue
+            try:
+                amt = float(rec.get("expenditure_amount") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            totals[(cid, ind)] = totals.get((cid, ind), 0.0) + amt
+        rows += len(results)
+        pag = (payload.get("pagination") or {}).get("last_indexes") or {}
+        nxt = pag.get("last_index")
+        if not nxt or len(results) < params["per_page"]:
             break
-        if total_pages is None and len(page_results) < params["per_page"]:
-            break
-        page += 1
+        last_index = nxt
+        last_amount = pag.get("last_expenditure_amount")
         time.sleep(0.15)
-    return results
+    return totals, rows
 
 
 def build_outside_index(api_key, states_by_office):
     """(candidate_id, "S"|"O") -> total independent-expenditure dollars.
 
-    Queried per (office, state) because the endpoint demands a state. Only
-    states that actually have a tracked race are queried, which keeps this
-    to roughly 80 requests rather than 100+. Best-effort throughout: a
-    single state failing is logged and skipped rather than losing the whole
-    pull, and main() decides what to do if everything fails."""
+    Queried per (office, state): the raw feed would happily return the whole
+    country at once, but that is tens of thousands of rows and hundreds of
+    requests, and a per-state loop lets one bad state fail without costing the
+    other eighty. Only states that actually carry a tracked race are queried.
+
+    Best-effort throughout - a single state failing is logged with FEC's real
+    error body and skipped - but a wholesale failure is now loud: if fewer than
+    half the pulls succeed, that is reported as a WARNING rather than quietly
+    becoming "$0 outside money everywhere"."""
     lookup = {}
     ok_states = 0
+    total_rows = 0
     failed = []
+    office_code = {"house": "H", "senate": "S"}
     for office, states in states_by_office.items():
+        code = office_code.get(office, office)
         for state in sorted(states):
             try:
-                recs = fetch_schedule_e_totals(office, state, api_key)
+                totals, rows = fetch_schedule_e_raw(code, state, api_key)
             except Exception as exc:  # noqa: BLE001 - best-effort by design
                 failed.append("%s/%s: %s" % (office, state, exc))
                 continue
             ok_states += 1
-            for rec in recs:
-                cid = (rec.get("candidate_id") or "").strip()
-                ind = (rec.get("support_oppose_indicator") or "").strip().upper()
-                if not cid or ind not in ("S", "O"):
-                    continue
-                total = float(rec.get("total") or 0.0)
-                key = (cid, ind)
-                lookup[key] = lookup.get(key, 0.0) + total
+            total_rows += rows
+            for key, amt in totals.items():
+                lookup[key] = lookup.get(key, 0.0) + amt
+    attempted = ok_states + len(failed)
     if failed:
-        sys.stderr.write("schedule_e: %d state pulls failed: %s\n"
-                         % (len(failed), "; ".join(failed[:5])))
-    sys.stderr.write("schedule_e: %d state pulls ok, %d (candidate,S/O) totals\n"
-                     % (ok_states, len(lookup)))
+        sys.stderr.write("schedule_e: %d of %d pulls failed. First 3 with FEC's own "
+                         "error body:\n  %s\n"
+                         % (len(failed), attempted, "\n  ".join(failed[:3])))
+    if attempted and ok_states < attempted / 2:
+        sys.stderr.write("WARNING: schedule_e majority failure (%d/%d ok) - outside money "
+                         "is undercounted across the board, not merely sparse.\n"
+                         % (ok_states, attempted))
+    sys.stderr.write("schedule_e: %d/%d pulls ok, %d raw rows, %d (candidate,S/O) totals, $%.0f\n"
+                     % (ok_states, attempted, total_rows, len(lookup), sum(lookup.values())))
     return lookup
 
 
@@ -931,6 +1001,22 @@ def main():
     for r in races:
         r["why"] = compute_why(r, top15)
 
+    # --- deliberately unscored races (see NO_SCORE near the top) ---
+    # Applied AFTER `why` is computed so the chips are replaced wholesale
+    # rather than sitting alongside an em dash, and BEFORE scoring so the
+    # race drops out of the raw sum that sets the normalising mean.
+    no_score_meta = []
+    for r in races:
+        ns = NO_SCORE.get(r["race"])
+        if not ns:
+            r["no_score"] = False
+            continue
+        r["calc"] = False
+        r["no_score"] = True
+        r["why"] = ["Not scored - see note"]
+        no_score_meta.append(dict(race=r["race"], note=ns["note"], source=ns.get("source", "")))
+    no_score_meta.sort(key=lambda x: x["race"])
+
     excluded_all = sorted(excluded["dem_only"] + excluded["rep_only"])
     overridden_races = sorted(r["race"] for r in races if r.get("override"))
 
@@ -1014,6 +1100,7 @@ def main():
                       rep_only=len(excluded["rep_only"]), races=excluded_all),
         match_counts=match_counts,
         overrides=overridden_races,
+        no_score=no_score_meta,
         outside_totals=outside_totals,
     )
 
@@ -1025,6 +1112,7 @@ def main():
     print("excluded %d races: dem_only=%d rep_only=%d" %
           (meta["excluded"]["count"], meta["excluded"]["dem_only"], meta["excluded"]["rep_only"]))
     print("FEC match tiers: %s" % match_counts)
+    print("not scored (NO_SCORE): %s" % ([x["race"] for x in no_score_meta] or "none"))
     print("outside totals: %s" % outside_totals)
 
 
