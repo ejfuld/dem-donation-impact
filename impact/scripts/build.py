@@ -388,7 +388,7 @@ outside_totals = dict(races_with_outside=sum(1 for v in _outside_vals if v > 0),
                        sum=sum(_outside_vals))
 
 meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
-            n=len(races), n_calc=sum(1 for r in races if r['calc'),
+            n=len(races), n_calc=sum(1 for r in races if r['calc']),
             sigma=SIG, k_dollars_per_reach=K_DOLLARS_PER_REACH,
             defaults=DEFAULTS,
             anchor=anchor, total_races=total_races, mean_raw=mean_raw, prior_reach=PRIOR_REACH,
