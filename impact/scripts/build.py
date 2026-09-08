@@ -12,10 +12,14 @@ K_DOLLARS_PER_REACH = 5000.0
 
 # Fixed model constant, deliberately NOT user-tunable: every campaign is
 # treated as already having reached its electorate this many times before
-# any donation. It only exists to keep the marginal value of the first
-# dollar finite; it is a fudge factor with no empirical grounding, so it is
-# not exposed as a degree of freedom.
-PRIOR_REACH = 1.0
+# any donation - standing in for the "free" reach a campaign gets without
+# paying for it (ballot party label, earned media, existing name ID, party
+# infrastructure). It also keeps the marginal value of the first dollar
+# finite. It is a fudge factor with no rigorous empirical grounding, so it
+# is not exposed as a degree of freedom; 10 was chosen (2026-09-08, up from
+# 1.0) as a rough judgment call for that free reach, not a derived figure -
+# see the site's methodology section for the reasoning.
+PRIOR_REACH = 10.0
 
 # Manual money overrides: race code -> hand-entered figures used instead of
 # the FEC match, for cases where FEC data is known to be wrong or missing
@@ -384,7 +388,7 @@ outside_totals = dict(races_with_outside=sum(1 for v in _outside_vals if v > 0),
                        sum=sum(_outside_vals))
 
 meta = dict(forecast_date='2026-09-04', built=datetime.date.today().isoformat(),
-            n=len(races), n_calc=sum(1 for r in races if r['calc']),
+            n=len(races), n_calc=sum(1 for r in races if r['calc'),
             sigma=SIG, k_dollars_per_reach=K_DOLLARS_PER_REACH,
             defaults=DEFAULTS,
             anchor=anchor, total_races=total_races, mean_raw=mean_raw, prior_reach=PRIOR_REACH,
