@@ -130,7 +130,7 @@ NO_SCORE = {
     ),
 }
 
-DEFAULTS = dict(c_house=100.0, senate_mult=0.5, sen_val=13.05, eta=0.67, theta=0.40, money="proj",
+DEFAULTS = dict(c_house=100.0, senate_mult=0.5, sen_val=13.05, eta=0.5, theta=0.40, money="proj",
                 outside_mult=0.35)
 
 # Datawrapper chart ids + a known-good version to start probing upward from.
