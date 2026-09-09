@@ -969,10 +969,10 @@
 
         <div class="control">
           <div class="control-widget">
-            <label for="eta">Bang for buck: low cost vs diminishing returns <span class="val" id="eta-val">0.67</span></label>
+            <label for="eta">Bang for buck: low cost vs diminishing returns <span class="val" id="eta-val">0.50</span></label>
             <div class="slider-box">
-              <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.67">
-              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.67347)" title="default 0.67"></div>
+              <input type="range" id="eta" min="0.01" max="0.99" step="0.01" value="0.50">
+              <div class="tick" style="left:calc(8px + (100% - 16px) * 0.50)" title="default 0.50"></div>
             </div>
             <div class="range-labels"><span>0.01</span><span>0.99</span></div>
           </div>
@@ -984,8 +984,9 @@
               higher this goes.</p>
             <p class="extra">Jacobson (1990)'s Box-Cox estimate of the concavity of challenger House spending
               was lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04); since votes scale as spending<sup>lambda</sup>,
-              eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72. The default of
-              2/3&nbsp;(0.67) sits just below that estimate and comfortably inside its uncertainty band.</p>
+              eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72. The default of 0.5 is a round
+              number sitting below that estimate, inside its wider uncertainty band, so as not to overstate how
+              concave the relationship really is.</p>
           </div>
         </div>
 
@@ -1191,7 +1192,7 @@
           derivative, with respect to dollars, of a CRRA utility curve over total passes. It converges to the
           old <code>money_eff<sup>&minus;eta</sup></code>&middot;<code>P<sup>eta&minus;1</sup></code> shape once
           <code>passes</code> is large relative to <code>prior_reach</code>, but stays finite as money
-          approaches $0 instead of relying on an arbitrary floor. Default eta&nbsp;=&nbsp;2/3&nbsp;(0.67) sits inside the
+          approaches $0 instead of relying on an arbitrary floor. Default eta&nbsp;=&nbsp;0.5 sits inside the
           uncertainty of Jacobson (1990)'s Box-Cox estimate that challenger House spending is concave with
           lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04), i.e. eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72.</p>
         <p><strong>Putting it together.</strong></p>
@@ -1233,7 +1234,7 @@
   "use strict";
 
   var DEFAULTS = {
-    eta: 0.67,
+    eta: 0.5,
     c_house: 100.0,
     senate_mult: 0.5,
     sen_val: 13.05,
