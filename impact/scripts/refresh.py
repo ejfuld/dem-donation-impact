@@ -157,7 +157,13 @@ FEC_SCHEDULE_E_URL = "https://api.open.fec.gov/v1/schedules/schedule_e/"
 # (the dollars are concentrated in a few thousand of ~29,000 records), cutting
 # the request count roughly threefold; FEC_MIN_INTERVAL paces every request so
 # a burst can never trip the per-minute ceiling.
-MIN_IE_AMOUNT = 1000.0
+# Set to 0.0 on 2026-09-09: with FEC_MIN_INTERVAL pacing in place the full
+# unfiltered pull (~400 requests, ~7 min) fits inside the 1,000/hour budget,
+# so there is no longer any reason to trade away data completeness. At
+# $1,000 this filter still captured 98% of the dollars but dropped 110 races
+# whose outside money was entirely small expenditures. Raise it again only if
+# the request budget becomes tight.
+MIN_IE_AMOUNT = 0.0
 FEC_MIN_INTERVAL = 1.0          # seconds between FEC requests (~60/min, half the 120 ceiling)
 _LAST_FEC_REQUEST = [0.0]
 # Flipped to False for the rest of the run if FEC rejects min_amount, so an
@@ -796,7 +802,7 @@ def fetch_schedule_e_raw(office, state, api_key):
         # Skip the long tail of tiny filings. Sorting is by descending amount,
         # so this trims pages off the END of each state - the cheap dollars -
         # never the top of the list.
-        if _MIN_AMOUNT_SUPPORTED[0]:
+        if _MIN_AMOUNT_SUPPORTED[0] and MIN_IE_AMOUNT > 0:
             params["min_amount"] = MIN_IE_AMOUNT
         if last_index is not None:
             params["last_index"] = last_index
