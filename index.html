@@ -1229,6 +1229,55 @@
 
 </div>
 
+<!-- ----------------------------------------------------------------------
+     Analytics: GoatCounter. Cookieless, stores no IP addresses, needs no
+     consent banner - which matters here, because a log of who browses
+     Democratic donation targets is not something to hand to an ad network.
+
+     Self-exclusion: GoatCounter's own default filter skips any browser with
+     localStorage "skipgc" set, so visiting ?notrack=1 opts this browser out
+     permanently and ?notrack=0 opts back in. This runs BEFORE count.js so the
+     flag is set by the time the pageview fires. Per-browser, not per-network -
+     GoatCounter deliberately stores no IP address to filter on.
+     ------------------------------------------------------------------- -->
+<script>
+  (function () {
+    try {
+      var p = new URLSearchParams(window.location.search);
+      if (p.get("notrack") === "1") window.localStorage.setItem("skipgc", "t");
+      if (p.get("notrack") === "0") window.localStorage.removeItem("skipgc");
+    } catch (e) {
+      // Private mode / storage blocked: nothing to do, counting just proceeds.
+    }
+  })();
+</script>
+<script data-goatcounter="https://ejfuld.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+<script>
+  // Donate-button clicks, recorded per race as GoatCounter events, so the
+  // dashboard lists "donate/AK", "donate/TX-23" and so on. This counts
+  // CLICK-THROUGHS ONLY - once a visitor reaches ActBlue we see nothing: not
+  // the amount, not whether they completed, not whether they gave at all.
+  //
+  // The buttons open in a new tab, so this page is never unloading when the
+  // handler runs and an ordinary call is reliable (no sendBeacon needed).
+  // Delegated from document because table rows are re-rendered constantly.
+  document.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest && e.target.closest(".donate-btn");
+    if (!btn) return;
+    try {
+      if (window.localStorage.getItem("skipgc") === "t") return;   // honour opt-out
+    } catch (e2) { /* storage blocked - fall through and count */ }
+    if (!window.goatcounter || typeof window.goatcounter.count !== "function") return;
+    var race = btn.getAttribute("data-race") || "unknown";
+    window.goatcounter.count({
+      path: "donate/" + race,
+      title: "Donate click: " + race,
+      event: true
+    });
+  });
+</script>
+
 <script>
 (function(){
   "use strict";
@@ -1540,7 +1589,7 @@
         '<td class="rating-td" data-label="Rating">' + ratingText + '</td>' +
         '<td class="num pwin-td" data-label="Dem win %">' + pCell + '</td>' +
         '<td class="num money-td" data-label="Money" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
-        '<td class="donate-td" data-label="Donate"><a class="donate-btn" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
+        '<td class="donate-td" data-label="Donate"><a class="donate-btn" data-race="' + escapeHtml(r.race) + '" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
         '<td class="num col-extra reach-td" data-label="Reach cost">' + reachText + '</td>' +
         '<td class="num col-extra outside-td" data-label="Outside $" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">' + outsideText + '</td>' +
         '</tr>'
