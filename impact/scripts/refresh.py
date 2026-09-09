@@ -147,6 +147,33 @@ FEC_BASE_URL = "https://api.open.fec.gov/v1/candidates/totals/"
 # documentation, and its undocumented cross-field validation started 422ing
 # our office+state+cycle combination. See fetch_schedule_e_raw().
 FEC_SCHEDULE_E_URL = "https://api.open.fec.gov/v1/schedules/schedule_e/"
+# Rate limiting. api.data.gov gives a personal key 1,000 requests/hour and
+# 120/minute. The old code slept 0.15s between pages and not at all between
+# states - roughly 400 requests/minute - which burned the whole hourly budget
+# in about a minute and then kept it flat, because rejected requests still
+# count against the bucket. On 2026-09-09 a run managed 5 of 85 state pulls.
+#
+# Two changes fix that. MIN_IE_AMOUNT drops the long tail of trivial filings
+# (the dollars are concentrated in a few thousand of ~29,000 records), cutting
+# the request count roughly threefold; FEC_MIN_INTERVAL paces every request so
+# a burst can never trip the per-minute ceiling.
+MIN_IE_AMOUNT = 1000.0
+FEC_MIN_INTERVAL = 1.0          # seconds between FEC requests (~60/min, half the 120 ceiling)
+_LAST_FEC_REQUEST = [0.0]
+# Flipped to False for the rest of the run if FEC rejects min_amount, so an
+# unsupported filter degrades into "fetch everything" rather than into
+# "silently report $0 outside money".
+_MIN_AMOUNT_SUPPORTED = [True]
+
+
+def _pace_fec():
+    """Block until FEC_MIN_INTERVAL has elapsed since the previous request."""
+    wait = FEC_MIN_INTERVAL - (time.monotonic() - _LAST_FEC_REQUEST[0])
+    if wait > 0:
+        time.sleep(wait)
+    _LAST_FEC_REQUEST[0] = time.monotonic()
+
+
 USER_AGENT = "impact-refresh/1.0 (+https://github.com/; static site data refresh script)"
 HTTP_TIMEOUT = 25
 MAX_VERSION_PROBE = 250  # safety cap so a probing loop can never run forever
@@ -766,10 +793,31 @@ def fetch_schedule_e_raw(office, state, api_key):
             sort="-expenditure_amount",
             sort_hide_null="false",
         )
+        # Skip the long tail of tiny filings. Sorting is by descending amount,
+        # so this trims pages off the END of each state - the cheap dollars -
+        # never the top of the list.
+        if _MIN_AMOUNT_SUPPORTED[0]:
+            params["min_amount"] = MIN_IE_AMOUNT
         if last_index is not None:
             params["last_index"] = last_index
             params["last_expenditure_amount"] = last_amount
-        payload = _http_get_json(FEC_SCHEDULE_E_URL + "?" + urllib.parse.urlencode(params))
+        _pace_fec()
+        try:
+            payload = _http_get_json(FEC_SCHEDULE_E_URL + "?" + urllib.parse.urlencode(params))
+        except RuntimeError as exc:
+            # min_amount is the only parameter here we have not verified against
+            # the live API. If FEC rejects the request as malformed, assume that
+            # is why, drop the filter for the rest of the run and retry once.
+            # Any other failure (429, 5xx) propagates to the caller as before.
+            if _MIN_AMOUNT_SUPPORTED[0] and ("HTTP 400" in str(exc) or "HTTP 422" in str(exc)):
+                _MIN_AMOUNT_SUPPORTED[0] = False
+                sys.stderr.write("schedule_e: FEC rejected min_amount; refetching unfiltered "
+                                 "(slower, but never silently zero).\n")
+                params.pop("min_amount", None)
+                _pace_fec()
+                payload = _http_get_json(FEC_SCHEDULE_E_URL + "?" + urllib.parse.urlencode(params))
+            else:
+                raise
         results = payload.get("results") or []
         if not results:
             break
@@ -790,11 +838,10 @@ def fetch_schedule_e_raw(office, state, api_key):
             break
         last_index = nxt
         last_amount = pag.get("last_expenditure_amount")
-        time.sleep(0.15)
     return totals, rows
 
 
-def build_outside_index(api_key, states_by_office):
+def build_outside_index(api_key, states_by_office, senate_key=None):
     """(candidate_id, "S"|"O") -> total independent-expenditure dollars.
 
     Queried per (office, state): the raw feed would happily return the whole
@@ -802,27 +849,48 @@ def build_outside_index(api_key, states_by_office):
     requests, and a per-state loop lets one bad state fail without costing the
     other eighty. Only states that actually carry a tracked race are queried.
 
+    Rate limiting is the real constraint. api.data.gov allows 1,000 requests
+    per hour per key and one full pull costs roughly 300, so two runs in an
+    hour exhausts it - and once exhausted, every further request still counts
+    against the bucket, which keeps it pinned. On 2026-09-08 that left ALL 35
+    Senate races at $0 while House kept its money, purely because the loop ran
+    House first and Senate was never reached.
+
+    Two defences, both here:
+      - `senate_key`: when a second api.data.gov key is configured, Senate is
+        pulled on its own key and cannot be starved by House at all.
+      - Senate is pulled FIRST regardless. If both halves share a key,
+        something still has to lose when the budget runs out, and Senate is the
+        better thing to protect: 35 races rather than 420, each carrying far
+        more weight in the score.
+
     Best-effort throughout - a single state failing is logged with FEC's real
-    error body and skipped - but a wholesale failure is now loud: if fewer than
+    error body and skipped - but a wholesale failure is loud: if fewer than
     half the pulls succeed, that is reported as a WARNING rather than quietly
     becoming "$0 outside money everywhere"."""
     lookup = {}
     ok_states = 0
     total_rows = 0
     failed = []
+    per_office = {}
     office_code = {"house": "H", "senate": "S"}
-    for office, states in states_by_office.items():
+    for office in ("senate", "house"):   # Senate first - see the note above.
+        states = states_by_office.get(office) or set()
         code = office_code.get(office, office)
+        key = senate_key if (office == "senate" and senate_key) else api_key
+        ok_here = 0
         for state in sorted(states):
             try:
-                totals, rows = fetch_schedule_e_raw(code, state, api_key)
+                totals, rows = fetch_schedule_e_raw(code, state, key)
             except Exception as exc:  # noqa: BLE001 - best-effort by design
                 failed.append("%s/%s: %s" % (office, state, exc))
                 continue
             ok_states += 1
+            ok_here += 1
             total_rows += rows
-            for key, amt in totals.items():
-                lookup[key] = lookup.get(key, 0.0) + amt
+            for k, amt in totals.items():
+                lookup[k] = lookup.get(k, 0.0) + amt
+        per_office[office] = "%d/%d ok" % (ok_here, len(states))
     attempted = ok_states + len(failed)
     if failed:
         sys.stderr.write("schedule_e: %d of %d pulls failed. First 3 with FEC's own "
@@ -834,6 +902,11 @@ def build_outside_index(api_key, states_by_office):
                          % (ok_states, attempted))
     sys.stderr.write("schedule_e: %d/%d pulls ok, %d raw rows, %d (candidate,S/O) totals, $%.0f\n"
                      % (ok_states, attempted, total_rows, len(lookup), sum(lookup.values())))
+    sys.stderr.write("schedule_e: min_amount filter %s at $%.0f, %.1fs between requests\n"
+                     % ("ON" if _MIN_AMOUNT_SUPPORTED[0] else "OFF (rejected by FEC)",
+                        MIN_IE_AMOUNT, FEC_MIN_INTERVAL))
+    sys.stderr.write("schedule_e by office: %s (senate on %s key)\n"
+                     % (per_office, "its own" if senate_key else "the shared"))
     return lookup
 
 
@@ -869,12 +942,21 @@ def load_prev_data_json():
 def main():
     # Accept either secret name. api.data.gov issues one key that works across
     # agencies, so the repo secret may reasonably be called either thing.
-    api_key = (os.environ.get("DATA_GOV_API_KEY", "").strip()
-               or os.environ.get("FEC_API_KEY", "").strip()
-               or "DEMO_KEY")
+    _data_gov = os.environ.get("DATA_GOV_API_KEY", "").strip()
+    _fec = os.environ.get("FEC_API_KEY", "").strip()
+    api_key = _data_gov or _fec or "DEMO_KEY"
+    # Second key, used ONLY for the Senate half of the outside-money pull, so a
+    # long House pull can never eat the budget Senate needs (see
+    # build_outside_index). Only meaningful when the two secrets hold DIFFERENT
+    # api.data.gov keys - each key gets its own 1,000/hour bucket. If they are
+    # identical, or only one is set, this stays None and both halves share.
+    senate_key = _fec if (_fec and _data_gov and _fec != _data_gov) else None
     if api_key == "DEMO_KEY":
         sys.stderr.write("WARNING: no DATA_GOV_API_KEY/FEC_API_KEY set; DEMO_KEY is capped at "
                          "40 requests/hour and the per-state outside-money pull will fail.\n")
+    sys.stderr.write("FEC keys: primary=%s, separate senate key=%s\n"
+                     % ("DEMO_KEY" if api_key == "DEMO_KEY" else "configured",
+                        "yes" if senate_key else "no"))
 
     # 1) Silver Bulletin forecast data. Load-bearing: fail loudly if this fails.
     try:
@@ -919,7 +1001,7 @@ def main():
         for _r in races:
             _st_code = _r["race"].split("-")[0] if _r["ch"] == "H" else _r["race"]
             states_by_office["house" if _r["ch"] == "H" else "senate"].add(_st_code)
-        outside_lookup = build_outside_index(api_key, states_by_office)
+        outside_lookup = build_outside_index(api_key, states_by_office, senate_key)
         print("FEC: pulled independent-expenditure totals covering %d (candidate,S/O) pairs" %
               len(outside_lookup))
     except Exception as e:
