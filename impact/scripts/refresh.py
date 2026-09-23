@@ -279,6 +279,31 @@ def http_get(url, timeout=HTTP_TIMEOUT):
         return resp.read()
 
 
+def _chart_get_with_retry(url, attempts=4):
+    """http_get for Datawrapper, retrying transient network failures.
+
+    On 2026-09-23 the nightly run died because one request to Datawrapper got
+    "Connection reset by peer" - a single dropped connection, not bad data -
+    and the forecast fetch is deliberately fail-loud, so the whole refresh
+    aborted. Transient failures (resets, timeouts, 5xx, 429) are now retried
+    with backoff (2s, 4s, 8s). A 404 is NOT retried: it is the normal signal
+    that we have probed past the newest chart version. Anything still failing
+    after the last attempt propagates exactly as before, so genuinely broken
+    data still stops the run."""
+    for i in range(attempts):
+        try:
+            return http_get(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 404 or not (e.code == 429 or e.code >= 500) or i == attempts - 1:
+                raise
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
+            if i == attempts - 1:
+                raise
+        sys.stderr.write("datawrapper: transient failure on %s, retry %d/%d\n"
+                         % (url, i + 1, attempts - 1))
+        time.sleep(2 ** (i + 1))
+
+
 def fetch_latest_chart_csv(chart_id, known_good_v):
     """Probe https://datawrapper.dwcdn.net/{id}/{v}/dataset.csv upward from
     known_good_v until a request 404s; return (version, csv_text) for the
@@ -289,7 +314,7 @@ def fetch_latest_chart_csv(chart_id, known_good_v):
     while v < known_good_v + MAX_VERSION_PROBE:
         url = "https://datawrapper.dwcdn.net/%s/%d/dataset.csv" % (chart_id, v)
         try:
-            raw = http_get(url)
+            raw = _chart_get_with_retry(url)
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 break
