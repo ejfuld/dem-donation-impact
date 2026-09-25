@@ -170,6 +170,9 @@ _LAST_FEC_REQUEST = [0.0]
 # unsupported filter degrades into "fetch everything" rather than into
 # "silently report $0 outside money".
 _MIN_AMOUNT_SUPPORTED = [True]
+# Primary-election spending excluded from outside money (see
+# fetch_schedule_e_raw). Tallied so the log shows how much was dropped.
+_PRIMARY_SKIPPED = {"rows": 0, "dollars": 0.0}
 
 
 def _pace_fec():
@@ -861,6 +864,21 @@ def fetch_schedule_e_raw(office, state, api_key):
                 amt = float(rec.get("expenditure_amount") or 0.0)
             except (TypeError, ValueError):
                 continue
+            # Skip PRIMARY-election spending (FEC election_type "P2026", "P2025"
+            # ...). outside money stands for how well-funded a campaign
+            # effectively is in the GENERAL, and money outside groups spent
+            # helping a candidate win the primary is spent and gone - it buys
+            # nothing now. Found 2026-09-25: 93% of the largest pro-Turek (IA)
+            # expenditures and 67% of pro-El-Sayed (MI) were primary spending,
+            # which overstated their funding and understated their scores.
+            # The candidate's OWN leftover cash is unaffected (that comes from
+            # the candidate-totals pull, not Schedule E). Rows with no
+            # election_type are kept rather than guessed at.
+            etype = (rec.get("election_type") or "").strip().upper()
+            if etype.startswith("P"):
+                _PRIMARY_SKIPPED["rows"] += 1
+                _PRIMARY_SKIPPED["dollars"] += amt
+                continue
             totals[(cid, ind)] = totals.get((cid, ind), 0.0) + amt
         rows += len(results)
         pag = (payload.get("pagination") or {}).get("last_indexes") or {}
@@ -933,6 +951,8 @@ def build_outside_index(api_key, states_by_office, senate_key=None):
                          % (ok_states, attempted))
     sys.stderr.write("schedule_e: %d/%d pulls ok, %d raw rows, %d (candidate,S/O) totals, $%.0f\n"
                      % (ok_states, attempted, total_rows, len(lookup), sum(lookup.values())))
+    sys.stderr.write("schedule_e: excluded %d primary-election rows ($%.0f)\n"
+                     % (_PRIMARY_SKIPPED["rows"], _PRIMARY_SKIPPED["dollars"]))
     sys.stderr.write("schedule_e: min_amount filter %s at $%.0f, %.1fs between requests\n"
                      % ("ON" if _MIN_AMOUNT_SUPPORTED[0] else "OFF (rejected by FEC)",
                         MIN_IE_AMOUNT, FEC_MIN_INTERVAL))
