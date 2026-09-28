@@ -2,6 +2,8 @@
 import csv, json, math, datetime, os, statistics as _st
 BASE = os.path.join(os.path.dirname(__file__), '..', 'data')
 SIG = {'H': 6.65, 'S': 6.69}
+# t(4) margin model - see refresh.py (T_DF / T_SCALE) for the rationale.
+from refresh import T_DF, T_SCALE, t_pdf, t_inv
 ELECTION = datetime.date(2026, 11, 3)
 CYCLE_START = datetime.date(2025, 1, 1)
 # $ per unit of the `reach` index (one impression to every voter in the
@@ -10,16 +12,8 @@ CYCLE_START = datetime.date(2025, 1, 1)
 # money can be expressed as "impression passes" (see the scoring section).
 K_DOLLARS_PER_REACH = 5000.0
 
-# Fixed model constant, deliberately NOT user-tunable: every campaign is
-# treated as already having reached its electorate this many times before
-# any donation - standing in for the "free" reach a campaign gets without
-# paying for it (ballot party label, earned media, existing name ID, party
-# infrastructure). It also keeps the marginal value of the first dollar
-# finite. It is a fudge factor with no rigorous empirical grounding, so it
-# is not exposed as a degree of freedom; raised twice on 2026-09-08 (1.0 ->
-# 10.0 -> 30.0) as the owner's own judgment call for that free reach, not a
-# derived figure - see the site's methodology section for the reasoning.
-PRIOR_REACH = 30.0
+# Fixed model constant (not user-tunable) - see refresh.py for the rationale.
+PRIOR_REACH = 1.0
 
 # Manual money overrides: race code -> hand-entered figures used instead of
 # the FEC match, for cases where FEC data is known to be wrong or missing
@@ -203,10 +197,10 @@ for fn, ch in [('silver_house_2026-09-04.csv', 'H'), ('silver_senate_2026-09-04.
             N = None
             calc = False
         else:
-            z = phi_inv(p)
-            sig = SIG[ch] * el
+            q = t_inv(p)
+            sig = T_SCALE[ch] * el
             invN = vpi / tip
-            a = invN * phi(z) / sig
+            a = invN * t_pdf(q) / sig
             b = a * tip
             N = 1.0 / invN
             calc = True

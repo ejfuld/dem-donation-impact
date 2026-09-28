@@ -53,7 +53,17 @@ BASE = os.path.join(HERE, "..", "data")
 SITE = os.path.join(HERE, "..", "..")
 DATA_JSON = os.path.join(SITE, "data.json")
 
-SIG = {"H": 6.65, "S": 6.69}
+SIG = {"H": 6.65, "S": 6.69}   # normal-fit margin SD (kept for reference / meta only)
+# Margin distribution used for `a`: Student t with T_DF degrees of freedom,
+# following Gelman, Silver & Edlin (2012, "What is the probability your vote
+# will make a difference?", Economic Inquiry), who used t(4) for state
+# outcomes. Scales T_SCALE (pct pts) were fit to Silver Bulletin's own
+# (margin, win-probability) pairs for races between 3% and 97% on 2026-09-27.
+# The t fits Silver's numbers clearly better than a normal (best pooled df
+# ~4.5), and its fat tails stop a long shot's small win probability from
+# implying a large density at a tie.
+T_DF = 4
+T_SCALE = {"H": 5.42, "S": 5.37}
 ELECTION = datetime.date(2026, 11, 3)
 CYCLE_START = datetime.date(2025, 1, 1)
 # $ per unit of the `reach` index (one impression to every voter in the
@@ -64,14 +74,12 @@ K_DOLLARS_PER_REACH = 5000.0
 
 # Fixed model constant, deliberately NOT user-tunable: every campaign is
 # treated as already having reached its electorate this many times before
-# any donation - standing in for the "free" reach a campaign gets without
-# paying for it (ballot party label, earned media, existing name ID, party
-# infrastructure). It also keeps the marginal value of the first dollar
-# finite. It is a fudge factor with no rigorous empirical grounding, so it
-# is not exposed as a degree of freedom; raised twice on 2026-09-08 (1.0 ->
-# 10.0 -> 30.0) as the owner's own judgment call for that free reach, not a
-# derived figure - see the site's methodology section for the reasoning.
-PRIOR_REACH = 30.0
+# any donation. Its job is to keep the marginal value of the first dollar
+# finite for a $0 campaign; 1 is the natural minimal choice (0 is undefined).
+# History: raised 1 -> 10 -> 30 on 2026-09-08 as a fudge factor because the
+# normal margin model over-credited underfunded long shots; restored to 1 on
+# 2026-09-28 when the t(4) margin model (see T_DF) removed that problem.
+PRIOR_REACH = 1.0
 
 # Manual money overrides: race code -> hand-entered figures used instead of
 # the FEC match, for cases where FEC data is known to be wrong or missing
@@ -215,6 +223,67 @@ def phi_inv(p):
     q = p - .5
     r = q * q
     return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)
+
+
+def t_pdf(x, df=T_DF):
+    c = math.exp(math.lgamma((df + 1) / 2) - math.lgamma(df / 2)) / math.sqrt(df * math.pi)
+    return c * (1 + x * x / df) ** (-(df + 1) / 2)
+
+
+def t_cdf(x, df=T_DF):
+    """Student-t CDF via the regularized incomplete beta (continued fraction)."""
+    if x == 0:
+        return 0.5
+    xb = df / (df + x * x)
+    ib = _betainc_reg(df / 2, 0.5, xb)
+    return 1 - 0.5 * ib if x > 0 else 0.5 * ib
+
+
+def _betainc_reg(a, b, x):
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    lbt = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log(1 - x)
+    if x < (a + 1) / (a + b + 2):
+        return math.exp(lbt) * _betacf(a, b, x) / a
+    return 1 - math.exp(lbt) * _betacf(b, a, 1 - x) / b
+
+
+def _betacf(a, b, x):
+    tiny = 1e-300
+    qab, qap, qam = a + b, a + 1, a - 1
+    c, d = 1.0, 1 - qab * x / qap
+    d = 1 / (d if abs(d) > tiny else tiny)
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1 + aa * d; d = 1 / (d if abs(d) > tiny else tiny)
+        c = 1 + aa / c; c = c if abs(c) > tiny else tiny
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1 + aa * d; d = 1 / (d if abs(d) > tiny else tiny)
+        c = 1 + aa / c; c = c if abs(c) > tiny else tiny
+        de = d * c
+        h *= de
+        if abs(de - 1) < 1e-14:
+            break
+    return h
+
+
+def t_inv(p, df=T_DF):
+    p = min(max(p, 1e-9), 1 - 1e-9)
+    lo, hi = -1e4, 1e4
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if t_cdf(mid, df) < p:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-12:
+            break
+    return (lo + hi) / 2
 
 
 # ---------------------------------------------------------------------------
@@ -565,10 +634,12 @@ def build_races():
                 N = None
                 calc = False
             else:
-                z = phi_inv(p)
-                sig = SIG[ch] * el
+                # t(T_DF) margin model: density at a tie of a scaled t whose
+                # CDF at 0 reproduces Silver's win probability p.
+                q = t_inv(p)
+                sig = T_SCALE[ch] * el
                 invN = vpi["vpi"] / tip
-                a = invN * phi(z) / sig
+                a = invN * t_pdf(q) / sig
                 b = a * tip
                 N = 1.0 / invN
                 calc = True
@@ -1244,6 +1315,7 @@ def main():
         n=len(races),
         n_calc=sum(1 for r in races if r["calc"]),
         sigma=SIG,
+        margin_model=dict(dist="t", df=T_DF, scale=T_SCALE),
         k_dollars_per_reach=K_DOLLARS_PER_REACH,
         defaults=DEFAULTS,
         anchor=anchor, total_races=total_races, mean_raw=mean_raw, prior_reach=PRIOR_REACH,
