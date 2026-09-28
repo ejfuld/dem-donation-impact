@@ -982,11 +982,14 @@
               ignored. At 1, only diminishing returns to the war chest matter and differences in the cost of
               reaching voters are ignored. In between, both count, with more weight on diminishing returns the
               higher this goes.</p>
-            <p class="extra">Jacobson (1990)'s Box-Cox estimate of the concavity of challenger House spending
-              was lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04); since votes scale as spending<sup>lambda</sup>,
-              eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72. The default of 0.5 is a round
-              number sitting below that estimate, inside its wider uncertainty band, so as not to overstate how
-              concave the relationship really is.</p>
+            <p class="extra">Jacobson (1990)'s Box-Cox estimate for challenger House spending,
+              lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04), implies eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72.
+              We treat that as an upper bound: it is correlational (the strongest challengers attract the
+              most money, which Jacobson acknowledges), it predates internet-era targeting, and it uses raw
+              dollars rather than price-adjusted reach, so differences in media prices likely show up as extra
+              concavity &mdash; while this model already prices reach separately. At the other end, modern
+              studies of TV advertising (e.g. Spenkuch &amp; Toniatti 2018; Sides, Vavreck &amp; Warshaw 2022)
+              find effects that are close to linear (eta near 0). The default of 0.5 sits between the two.</p>
           </div>
         </div>
 
@@ -1133,8 +1136,11 @@
           a Senate seat (<code>c_eff&nbsp;=&nbsp;c_house&middot;senate_mult</code>).</p>
         <p><strong>a &mdash; chance one vote flips the seat.</strong> Silver Bulletin's forecast gives a win
           probability for the leading Democrat (or, where there is none, the leading independent). That
-          probability is converted to an implied margin distribution (assumed roughly normal, with a
-          race-specific spread derived from Silver's own elasticity estimate), and <code>a</code> is the
+          probability is converted to an implied margin distribution &mdash; a fat-tailed Student
+          <em>t</em> with 4 degrees of freedom, following Gelman, Silver &amp; Edlin (2012), <em>What Is the
+          Probability Your Vote Will Make a Difference?</em>, with a race-specific spread derived from Silver's
+          own elasticity estimate and a scale fit to Silver Bulletin's published margins and win
+          probabilities (the <em>t</em> fits them clearly better than a normal curve) &mdash; and <code>a</code> is the
           density of that margin distribution at a perfectly tied race, times one over the size of the race's
           electorate. Intuitively: a race Silver already calls near a toss-up, with relatively few voters,
           has a much higher chance that a single vote is decisive than a lopsided race or one with a huge
@@ -1182,19 +1188,16 @@
           already has a lot of money gets less marginal benefit from one more dollar than a campaign still
           building out its operation. <code>passes&nbsp;=&nbsp;money_eff&nbsp;/&nbsp;P_dollars</code> is how
           many of these full-race impression passes the campaign's effective money buys. Rather than a flat
-          dollar floor on money, every campaign is treated as already having reached its electorate many
-          times over (<code>prior_reach&nbsp;=&nbsp;30</code>) before any donation arrives &mdash; standing in
-          for the reach a campaign gets for free, from its ballot party label, earned media, existing name
-          recognition, and party infrastructure, and also keeping the first dollar's value finite. It is a
-          judgment call with no rigorous empirical grounding, which is why it is fixed rather than a slider
-          here. The marginal value of one more dollar is then
+          dollar floor on money, every campaign is treated as already having made one impression pass
+          (<code>prior_reach&nbsp;=&nbsp;1</code>) before any donation arrives. That is the smallest natural
+          choice: it keeps a $0 campaign's first dollar finite without adding a tunable fudge factor, which
+          is why it is fixed rather than a slider. The marginal value of one more dollar is then
           <code>(prior_reach&nbsp;+&nbsp;passes)<sup>&minus;eta</sup>&nbsp;/&nbsp;P_dollars</code> &mdash; the
           derivative, with respect to dollars, of a CRRA utility curve over total passes. It converges to the
           old <code>money_eff<sup>&minus;eta</sup></code>&middot;<code>P<sup>eta&minus;1</sup></code> shape once
           <code>passes</code> is large relative to <code>prior_reach</code>, but stays finite as money
-          approaches $0 instead of relying on an arbitrary floor. Default eta&nbsp;=&nbsp;0.5 sits inside the
-          uncertainty of Jacobson (1990)'s Box-Cox estimate that challenger House spending is concave with
-          lambda&nbsp;=&nbsp;0.28 (SE&nbsp;0.04), i.e. eta&nbsp;=&nbsp;1&nbsp;&minus;&nbsp;lambda&nbsp;&asymp;&nbsp;0.72.</p>
+          approaches $0 instead of relying on an arbitrary floor. The default eta&nbsp;=&nbsp;0.5 sits between
+          the two ends of the literature: see the eta slider's description above.</p>
         <p><strong>Putting it together.</strong></p>
         <ul>
           <li><code>raw&nbsp;=&nbsp;V&nbsp;&times;&nbsp;el&nbsp;&times;&nbsp;Nrel&nbsp;&times;&nbsp;(prior_reach&nbsp;+&nbsp;passes)<sup>&minus;eta</sup>&nbsp;/&nbsp;P_dollars</code>,
