@@ -181,6 +181,12 @@ _MIN_AMOUNT_SUPPORTED = [True]
 # Primary-election spending excluded from outside money (see
 # fetch_schedule_e_raw). Tallied so the log shows how much was dropped.
 _PRIMARY_SKIPPED = {"rows": 0, "dollars": 0.0}
+# (office code "H"/"S", state) pairs whose schedule_e pull failed this run.
+# Races in those states carry forward their previous outside-money figures
+# instead of silently dropping to $0. Found 2026-10-12: the Iowa Senate pull
+# failed, IA's ~$35M of general-election outside money vanished, and Turek
+# jumped to #1 on a data gap rather than on anything real.
+_FAILED_IE_PULLS = set()
 
 
 def _pace_fec():
@@ -992,6 +998,7 @@ def build_outside_index(api_key, states_by_office, senate_key=None):
     ok_states = 0
     total_rows = 0
     failed = []
+    _FAILED_IE_PULLS.clear()
     per_office = {}
     office_code = {"house": "H", "senate": "S"}
     for office in ("senate", "house"):   # Senate first - see the note above.
@@ -1004,6 +1011,7 @@ def build_outside_index(api_key, states_by_office, senate_key=None):
                 totals, rows = fetch_schedule_e_raw(code, state, key)
             except Exception as exc:  # noqa: BLE001 - best-effort by design
                 failed.append("%s/%s: %s" % (office, state, exc))
+                _FAILED_IE_PULLS.add((code, state))
                 continue
             ok_states += 1
             ok_here += 1
@@ -1134,6 +1142,7 @@ def main():
     cost_idx = load_cost_index()
 
     match_counts = {"name": 0, "fuzzy": 0, "edit": 0, "state": 0, "top$": 0, "none": 0}
+    stale_outside = []
 
     for r in races:
         code = r["race"]
@@ -1197,17 +1206,29 @@ def main():
         # plus IE dollars OPPOSING their main opponent. Both default to 0.0
         # when unknown (no cand_id/opp_id to key on, or the schedule_e pull
         # failed entirely) - never None, same as every other money field.
-        if outside_lookup is not None:
+        _ie_state = code.split("-")[0]
+        _ie_failed = outside_lookup is None or (r["ch"], _ie_state) in _FAILED_IE_PULLS
+        if _ie_failed:
+            # This race's pull failed (or the whole schedule_e pull did):
+            # reuse the last good figures rather than reporting $0, which
+            # would make a heavily-backed race look starved for money.
+            outside_support = prev.get("outside_support", 0.0) or 0.0
+            outside_oppose = prev.get("outside_oppose", 0.0) or 0.0
+            r["outside_stale"] = True
+            stale_outside.append(code)
+        else:
             outside_support = outside_lookup.get((cand_id, "S"), 0.0) if cand_id else 0.0
             outside_oppose = outside_lookup.get((opp_id, "O"), 0.0) if opp_id else 0.0
-        else:
-            outside_support = 0.0
-            outside_oppose = 0.0
         r["outside_support"] = outside_support
         r["outside_oppose"] = outside_oppose
         r["outside_total"] = outside_support + outside_oppose
 
         match_counts[r["match"]] = match_counts.get(r["match"], 0) + 1
+
+    if stale_outside:
+        print("WARNING: outside money carried forward from the previous run for %d races "
+              "whose schedule_e pull failed: %s" % (len(stale_outside), ", ".join(sorted(stale_outside))),
+              file=sys.stderr)
 
     # electorate size / reach cost, same formula as build.py: median House N == 1
     house_Ns = [r["N"] for r in races if r["ch"] == "H" and r["N"] is not None]
