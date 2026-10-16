@@ -872,6 +872,112 @@ def _http_get_json(url):
         raise RuntimeError("HTTP %s: %s" % (exc.code, body)) from exc
 
 
+FEC_COMMITTEES_URL = "https://api.open.fec.gov/v1/committees/"
+FEC_EFILE_URL = "https://api.open.fec.gov/v1/efile/reports/house-senate/"
+EFILE_BATCH = 50          # ids per request (FEC accepts repeated array params)
+EFILE_LOOKBACK = "2026-06-01"   # only reports received since then can be newer than the totals
+
+
+def _batched_get(url, base_params, id_name, ids):
+    """GET url with `id_name` repeated for each id, in batches, paging each
+    batch to the end. Returns the concatenated result rows."""
+    out = []
+    ids = sorted(set(i for i in ids if i))
+    for i in range(0, len(ids), EFILE_BATCH):
+        chunk = ids[i:i + EFILE_BATCH]
+        page = 1
+        while True:
+            params = list(base_params.items()) + [("per_page", 100), ("page", page)]
+            params += [(id_name, x) for x in chunk]
+            _pace_fec()
+            payload = _http_get_json(url + "?" + urllib.parse.urlencode(params))
+            rows = payload.get("results") or []
+            out.extend(rows)
+            pages = (payload.get("pagination") or {}).get("pages") or 1
+            if not rows or page >= pages or page >= 50:
+                break
+            page += 1
+    return out
+
+
+def build_efile_overlay(api_key, cov_by_cand):
+    """Fast path for new FEC reports. FEC's processed candidate totals (which
+    the main pull reads) lag the raw e-filed reports by days after a filing
+    deadline: on 2026-10-16 Turek's Q3 ($13.9M raised) had been e-filed the
+    day before but the totals still stopped at June 30, and only 46 of 455
+    races showed Q3 at all. This reads the raw e-filed Form 3 summaries for
+    each matched candidate's principal campaign committee and returns, for
+    any candidate with reports NEWER than their processed totals:
+        candidate_id -> dict(receipts_add, coh, cov, reports)
+    receipts_add is the sum of total_receipts_period over the newer reports
+    (added to the cycle-to-date receipts from the totals), coh/cov come from
+    the newest one. Amendments: for each coverage period only the latest
+    filing is used. Any overlap with the processed coverage, or more than one
+    principal committee with newer reports, and that candidate is skipped -
+    better to show the older processed number than a double count.
+
+    cov_by_cand: candidate_id -> processed coverage_end_date (YYYY-MM-DD)."""
+    if not cov_by_cand:
+        return {}
+    # 1) principal committees for these candidates
+    cms = _batched_get(FEC_COMMITTEES_URL, dict(api_key=api_key, designation="P"),
+                       "candidate_id", cov_by_cand.keys())
+    cands_by_cm = {}
+    for c in cms:
+        cycles = c.get("cycles") or []
+        if cycles and 2026 not in cycles:
+            continue
+        for cid in c.get("candidate_ids") or []:
+            if cid in cov_by_cand:
+                cands_by_cm.setdefault(c.get("committee_id"), set()).add(cid)
+    if not cands_by_cm:
+        return {}
+    # 2) raw e-filed reports for those committees
+    rows = _batched_get(FEC_EFILE_URL, dict(api_key=api_key, min_receipt_date=EFILE_LOOKBACK,
+                                            sort="-receipt_date"),
+                        "committee_id", cands_by_cm.keys())
+    latest = {}   # (committee, coverage_start, coverage_end) -> newest filing
+    for r in rows:
+        if r.get("most_recent") is False:
+            continue
+        cs = str(r.get("coverage_start_date") or "")[:10]
+        ce = str(r.get("coverage_end_date") or "")[:10]
+        if not cs or not ce:
+            continue
+        key = (r.get("committee_id"), cs, ce)
+        if key not in latest or str(r.get("receipt_date") or "") > str(latest[key].get("receipt_date") or ""):
+            latest[key] = r
+    by_cm = {}
+    for (cm, cs, ce), r in latest.items():
+        by_cm.setdefault(cm, []).append((cs, ce, r))
+    # 3) per candidate: reports strictly after the processed coverage
+    found = {}
+    for cm, reps in by_cm.items():
+        for cid in cands_by_cm.get(cm, ()):
+            cov = cov_by_cand[cid]
+            newer = [(cs, ce, r) for cs, ce, r in reps if ce > cov]
+            if not newer:
+                continue
+            if any(cs <= cov for cs, ce, r in newer):
+                sys.stderr.write("efile: skipping %s (%s) - new report overlaps processed coverage %s\n"
+                                 % (cid, cm, cov))
+                continue
+            newer.sort(key=lambda x: x[1])
+            add = sum(float(r.get("total_receipts_period") or 0.0) for cs, ce, r in newer)
+            last = newer[-1][2]
+            entry = dict(receipts_add=add,
+                         coh=float(last.get("cash_on_hand_end_period") or 0.0),
+                         cov=newer[-1][1], reports=len(newer), committee=cm)
+            if cid in found:   # two principal committees both with new reports
+                found[cid] = None
+            else:
+                found[cid] = entry
+    out = {k: v for k, v in found.items() if v}
+    sys.stderr.write("efile: %d committees, %d raw reports, newer-than-processed data for %d candidates\n"
+                     % (len(cands_by_cm), len(rows), len(out)))
+    return out
+
+
 def fetch_schedule_e_raw(office, state, api_key):
     """Page through the RAW /v1/schedules/schedule_e/ feed for one
     (office, state) pair and return (candidate_id, "S"|"O") -> dollars.
@@ -1118,6 +1224,26 @@ def main():
         fec_by_race = None
         fec_by_state = None
 
+    # 2b) Match every race to its FEC candidate now (rather than inside the
+    # loop below) so the e-filing fast path can look up all their committees
+    # in a handful of batched requests. Runs BEFORE schedule_e so the big
+    # outside-money pull can never starve it of rate-limit budget.
+    matches = {}
+    efile = {}
+    if fec_by_race is not None:
+        for r in races:
+            matches[r["race"]] = match_money(r["race"], r["ch"], r["name"],
+                                             chosen_party_by_race.get(r["race"], "D"),
+                                             fec_by_race, fec_by_state)
+        try:
+            efile = build_efile_overlay(api_key, {
+                m["candidate_id"]: m["cov"] for m in matches.values()
+                if m.get("candidate_id") and m.get("cov")})
+        except Exception as e:  # noqa: BLE001 - best-effort; processed totals still stand
+            print("WARNING: FEC e-filing fast path failed (%s); using processed totals only" % e,
+                  file=sys.stderr)
+            efile = {}
+
     # 3) FEC independent expenditures (schedule_e). Best-effort like the
     # money pull above, but tracked separately: it's fine for this to fail
     # even when the candidate-totals pull above succeeded. On total failure,
@@ -1148,9 +1274,16 @@ def main():
         code = r["race"]
         prev = prev_by_race.get(code) or {}
         if fec_by_race is not None:
-            m = match_money(code, r["ch"], r["name"], chosen_party_by_race.get(code, "D"),
-                             fec_by_race, fec_by_state)
+            m = dict(matches[code])
             cand_id = m.get("candidate_id") or None
+            ef = efile.get(cand_id) if cand_id else None
+            if ef:
+                # Newer e-filed report(s) than FEC has processed - see
+                # build_efile_overlay(). Receipts stay cycle-to-date.
+                m["receipts"] = (m["receipts"] or 0.0) + ef["receipts_add"]
+                m["coh"] = ef["coh"]
+                m["cov"] = ef["cov"]
+                r["efiled"] = True
             opp_id = find_opponent_id(code, chosen_party_by_race.get(code, "D"), fec_by_race)
         else:
             m = dict(receipts=prev.get("receipts", 0.0), coh=prev.get("coh", 0.0),
