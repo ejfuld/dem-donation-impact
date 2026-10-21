@@ -365,6 +365,8 @@
     font-weight:600;
     z-index:2;
   }
+  thead th{vertical-align:bottom;}
+  thead th.th-wrap{white-space:normal;line-height:1.25;min-width:5.5em;max-width:7em;}
   th.sortable{cursor:pointer;user-select:none;}
   th.sortable:hover{color:var(--fg);}
   th .arrow{display:inline-block;width:.9em;color:var(--accent);}
@@ -787,7 +789,7 @@
     }
 
     /* chamber / rating / dem win% as small labelled meta lines */
-    td.chamber-td,td.rating-td,td.pwin-td{
+    td.chamber-td,td.pwin-td,td.effmoney-td,td.costidx-td{
       display:flex;
       justify-content:space-between;
       align-items:center;
@@ -796,7 +798,7 @@
       border-top:1px solid var(--border);
       font-size:.85rem;
     }
-    td.chamber-td::before,td.rating-td::before,td.pwin-td::before{
+    td.chamber-td::before,td.pwin-td::before,td.effmoney-td::before,td.costidx-td::before{
       display:inline;margin:0;
     }
 
@@ -916,10 +918,12 @@
             <th class="sortable" data-key="race">Race <span class="arrow"></span></th>
             <th class="sortable" data-key="name">Candidate <span class="arrow"></span></th>
             <th class="sortable" data-key="ch">Chamber <span class="arrow"></span></th>
-            <th class="sortable" data-key="rating">Rating <span class="arrow"></span></th>
             <th class="sortable num" data-key="p">Dem win % <span class="arrow"></span></th>
-            <th class="sortable num" data-key="money" title="The money figure selected by the &quot;Money that counts as already raised&quot; control below, as most recently reported to the FEC">Money <span class="arrow"></span></th>
+            <th class="sortable num th-wrap" data-key="moneyEff" title="The campaign's own money (per the &quot;Money that counts as already raised&quot; control) plus outside spending times the outside-money multiplier">Effective money <span class="arrow"></span></th>
+            <th class="sortable num th-wrap" data-key="costidx" title="Cost of one impression pass &mdash; reaching every voter in the race once &mdash; at the current settings">Cost index <span class="arrow"></span></th>
             <th>Donate</th>
+            <th class="sortable col-extra" data-key="rating">Rating <span class="arrow"></span></th>
+            <th class="sortable num col-extra" data-key="money" title="The money figure selected by the &quot;Money that counts as already raised&quot; control below, as most recently reported to the FEC">Money <span class="arrow"></span></th>
             <th class="sortable num col-extra" data-key="reach" title="Cost to reach 1% of electorate">Reach cost <span class="arrow"></span></th>
             <th class="sortable num col-extra" data-key="outside" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">Outside $ <span class="arrow"></span></th>
           </tr>
@@ -1392,7 +1396,7 @@
       override: !!r.override, note: r.note || "", source: r.source || "",
       calc: calc,
       reach: calc ? r.reach : null,
-      moneyDefRaw: M, moneyUsed: M, outsideTotal: outsideTotal,
+      moneyDefRaw: M, moneyUsed: M, moneyEff: moneyEff, outsideTotal: outsideTotal,
       pDollars: null, passes: null,
       raw: 0, impact: null, impact2: null, rank: null
     };
@@ -1436,6 +1440,8 @@
       case "p": av = a.p; bv = b.p; break;
       case "reach": av = a.calc ? a.reach : 0; bv = b.calc ? b.reach : 0; break;
       case "money": av = a.moneyUsed; bv = b.moneyUsed; break;
+      case "moneyEff": av = a.moneyEff; bv = b.moneyEff; break;
+      case "costidx": av = a.calc ? a.pDollars : 0; bv = b.calc ? b.pDollars : 0; break;
       case "outside": av = a.outsideTotal || 0; bv = b.outsideTotal || 0; break;
       default: av = a.calc ? a.impact2 : 0; bv = b.calc ? b.impact2 : 0;
     }
@@ -1539,7 +1545,7 @@
       }
       var covNote = r.cov ? (" (as of " + escapeHtml(r.cov) + ")") : "";
       var moneyLabelCap = moneyLabel.charAt(0).toUpperCase() + moneyLabel.slice(1);
-      var moneyTitle = moneyLabelCap + ": " + fmtMoney(r.moneyDefRaw) + covNote + ".";
+      var moneyTitle = "Effective money " + fmtMoney(r.moneyEff) + ". " + moneyLabelCap + ": " + fmtMoney(r.moneyDefRaw) + covNote + ".";
       if (r.outsideTotal && r.outsideTotal > 0) {
         moneyTitle += " Outside spending " + fmtMoney(r.outsideTotal) + " counted at " +
           Math.round(p.outside_mult * 100) + "%.";
@@ -1578,8 +1584,8 @@
       var outsideText = (r.outsideTotal && r.outsideTotal > 0) ? fmtMoney(r.outsideTotal) : DASH;
 
       // Cell order below matches the <thead> order exactly: Rank plus the 8
-      // other default-visible columns first (Impact..Donate), then the 2
-      // .col-extra columns (Reach cost, Outside $), hidden unless
+      // other default-visible columns first (Impact..Donate), then the 4
+      // .col-extra columns (Rating, Money, Reach cost, Outside $), hidden unless
       // #races-table has .show-extra. Every <td> carries data-label so the
       // mobile card layout can print it via ::before.
       return (
@@ -1589,10 +1595,12 @@
         '<td class="race-td" data-label="Race">' + escapeHtml(r.race) + ak + '</td>' +
         '<td class="candidate-td" data-label="Candidate">' + escapeHtml(r.name) + warn + overrideMark + '</td>' +
         '<td class="chamber-td" data-label="Chamber"><span class="pill' + (r.ch === "S" ? " senate" : "") + '">' + (r.ch === "S" ? "Senate" : "House") + '</span></td>' +
-        '<td class="rating-td" data-label="Rating">' + ratingText + '</td>' +
         '<td class="num pwin-td" data-label="Dem win %">' + pCell + '</td>' +
-        '<td class="num money-td" data-label="Money" title="' + moneyTitle + '">' + fmtMoney(r.moneyUsed) + '</td>' +
+        '<td class="num effmoney-td" data-label="Effective money" title="' + moneyTitle + '">' + fmtMoney(r.moneyEff) + '</td>' +
+        '<td class="num costidx-td" data-label="Cost index" title="Cost of one impression pass (reaching every voter in the race once) at the current settings.">' + (r.calc ? fmtMoney(r.pDollars) : DASH) + '</td>' +
         '<td class="donate-td" data-label="Donate"><a class="donate-btn" data-race="' + escapeHtml(r.race) + '" href="' + donateUrl(r) + '" target="_blank" rel="noopener noreferrer">Donate</a></td>' +
+        '<td class="col-extra rating-td" data-label="Rating">' + ratingText + '</td>' +
+        '<td class="num col-extra money-td" data-label="Money" title="' + moneyLabelCap + covNote + '">' + fmtMoney(r.moneyUsed) + '</td>' +
         '<td class="num col-extra reach-td" data-label="Reach cost">' + reachText + '</td>' +
         '<td class="num col-extra outside-td" data-label="Outside $" title="Party-committee and super-PAC spending helping this candidate, before the outside-money multiplier">' + outsideText + '</td>' +
         '</tr>'
